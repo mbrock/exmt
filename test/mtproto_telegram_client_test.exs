@@ -107,6 +107,103 @@ defmodule MTProto.Telegram.ClientTest do
                      }}}
   end
 
+  test "connect returns the current session id for a restored client" do
+    %{client: client} = start_restored_client()
+
+    assert {:ok, 123} = Client.connect(client)
+  end
+
+  test "get_config_sync returns a decoded rpc_error" do
+    parent = self()
+    session_data = sample_session_data(dc_id: 2)
+
+    caller =
+      spawn_link(fn ->
+        {:ok, client} =
+          Client.start_link(
+            host: ~c"149.154.167.50",
+            port: 443,
+            session_data: session_data,
+            socket_mod: FakeSocket,
+            socket_opts: [test_pid: parent],
+            notify_to: self(),
+            session_id: 123,
+            now_ns_fun: fn -> 1_713_534_000_000_000_000 end
+          )
+
+        send(parent, {:sync_client, self(), client})
+
+        result =
+          Client.get_config_sync(client,
+            api_id: 12345,
+            device_model: "exmt-dev",
+            system_version: "OTP test",
+            app_version: "0.1.0-test",
+            system_lang_code: "en",
+            lang_pack: "",
+            lang_code: "en",
+            padding_bytes: :binary.copy(<<0xAA>>, 64),
+            timeout: 5_000
+          )
+
+        send(parent, {:sync_result, result})
+      end)
+
+    socket = {:fake_socket, self()}
+
+    assert_receive {:fake_socket, :connect, ~c"149.154.167.50", 443, _opts}
+    assert_receive {:fake_socket, :setopts, ^socket, [active: :once]}
+    assert_receive {:sync_client, ^caller, client}
+    assert_receive {:fake_socket, :send, ^socket, <<0xEF>>}
+    assert_receive {:fake_socket, :send, ^socket, request_packet}
+
+    assert {:ok, request_payload} = decode_transport_frame(request_packet)
+
+    assert {:ok, decoded_request_packet} =
+             EncryptedPacket.decode(
+               request_payload,
+               SessionData.auth_key(session_data),
+               sender: :client,
+               session_id: 123
+             )
+
+    assert {:ok, expected_body} =
+             API.wrap_request(API.help_get_config(),
+               api_id: 12345,
+               device_model: "exmt-dev",
+               system_version: "OTP test",
+               app_version: "0.1.0-test",
+               system_lang_code: "en",
+               lang_pack: "",
+               lang_code: "en",
+               padding_bytes: :binary.copy(<<0xAA>>, 64)
+             )
+
+    assert decoded_request_packet.body == expected_body
+
+    response_body = rpc_error_body(420, "FLOOD_WAIT_1")
+
+    send_encrypted_server_result(
+      client,
+      socket,
+      session_data,
+      rpc_result_body(decoded_request_packet.message_id, response_body),
+      8_000
+    )
+
+    assert_receive {:sync_result,
+                    {:error,
+                     {:rpc_error,
+                      %Decoded{
+                        tl_name: "rpc_error",
+                        type_name: "RpcError",
+                        fields: %{
+                          error_code: 420,
+                          error_message: "FLOOD_WAIT_1"
+                        }
+                      }}}}
+  end
+
   test "telegram client sends auth.sendCode and emits decoded auth.sentCode results" do
     %{client: client, socket: socket, session_data: session_data} =
       start_restored_client()

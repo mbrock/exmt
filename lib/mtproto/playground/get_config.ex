@@ -213,23 +213,25 @@ defmodule MTProto.Playground.GetConfig do
     case TelegramClient.start_link(client_opts) do
       {:ok, client} ->
         try do
-          with :ok <- maybe_begin_auth_key_exchange(client, session_data),
-               {:ok, session_id} <-
-                 wait_for_session_ready(client, timeout, verbose?),
-               {:ok, request_id} <-
-                 TelegramClient.get_config(client,
-                   api_id: api_id,
-                   request: :help_get_config
+          with {:ok, session_id} <-
+                 TelegramClient.connect(client,
+                   timeout: timeout,
+                   on_mtproto_event: verbose_callback(:auth, verbose?)
                  ),
-               {:ok, result_summary} <-
-                 wait_for_rpc_result(client, request_id, timeout, verbose?) do
+               {:ok, decoded} <-
+                 TelegramClient.get_config_sync(client,
+                   api_id: api_id,
+                   request: :help_get_config,
+                   timeout: timeout,
+                   on_mtproto_event: verbose_callback(:rpc, verbose?),
+                   on_telegram_event: verbose_callback(:rpc, verbose?)
+                 ) do
             {:ok,
              %{
                endpoint: endpoint,
                session_id: session_id,
-               request_id: request_id,
                layer: API.current_layer(),
-               result: result_summary
+               result: %{kind: :decoded, decoded: decoded}
              }}
           end
         after
@@ -238,62 +240,6 @@ defmodule MTProto.Playground.GetConfig do
 
       {:error, reason} ->
         {:error, reason}
-    end
-  end
-
-  defp maybe_begin_auth_key_exchange(_client, %SessionData{}), do: :ok
-
-  defp maybe_begin_auth_key_exchange(client, nil),
-    do: TelegramClient.begin_auth_key_exchange(client)
-
-  defp wait_for_session_ready(client, timeout, verbose?) do
-    deadline = now_ms() + timeout
-    wait_for_session_ready_until(client, deadline, verbose?)
-  end
-
-  defp wait_for_session_ready_until(client, deadline, verbose?) do
-    receive do
-      {:mtproto, ^client, {:session_ready, session_id}} ->
-        {:ok, session_id}
-
-      {:mtproto, ^client, event} ->
-        maybe_print_event(:auth, event, verbose?)
-        wait_for_session_ready_until(client, deadline, verbose?)
-
-      {:EXIT, ^client, reason} ->
-        {:error, {:connection_exit, reason}}
-    after
-      remaining_timeout(deadline) ->
-        {:error, :session_timeout}
-    end
-  end
-
-  defp wait_for_rpc_result(client, request_id, timeout, verbose?) do
-    deadline = now_ms() + timeout
-    wait_for_rpc_result_until(client, request_id, deadline, verbose?)
-  end
-
-  defp wait_for_rpc_result_until(client, request_id, deadline, verbose?) do
-    receive do
-      {:telegram, ^client,
-       {:rpc_request_result_decoded, ^request_id, :help_get_config, _result,
-        decoded}} ->
-        {:ok, %{kind: :decoded, decoded: decoded}}
-
-      {:telegram, ^client,
-       {:rpc_request_result_decode_error, ^request_id, :help_get_config,
-        _result_type, reason}} ->
-        {:error, {:rpc_result_decode_error, reason}}
-
-      {:mtproto, ^client, event} ->
-        maybe_print_event(:rpc, event, verbose?)
-        wait_for_rpc_result_until(client, request_id, deadline, verbose?)
-
-      {:EXIT, ^client, reason} ->
-        {:error, {:connection_exit, reason}}
-    after
-      remaining_timeout(deadline) ->
-        {:error, :rpc_timeout}
     end
   end
 
@@ -334,12 +280,15 @@ defmodule MTProto.Playground.GetConfig do
     IO.puts("  event: #{inspect(event, pretty: true)}")
   end
 
-  defp maybe_print_event(_phase, _event, false), do: :ok
+  defp verbose_callback(phase, true) do
+    fn event -> maybe_print_event(phase, event, true) end
+  end
+
+  defp verbose_callback(_phase, false), do: nil
 
   defp print_summary(summary, opts) do
     IO.puts("Success on #{format_endpoint(summary.endpoint)}")
     IO.puts("Session id: #{summary.session_id}")
-    IO.puts("Request id: #{summary.request_id}")
     IO.puts("Result: #{format_result(summary.result)}")
 
     if Keyword.get(opts, :verbose, false) do
@@ -412,12 +361,6 @@ defmodule MTProto.Playground.GetConfig do
     |> String.downcase()
     |> String.pad_leading(8, "0")
   end
-
-  defp remaining_timeout(deadline) do
-    max(deadline - now_ms(), 0)
-  end
-
-  defp now_ms, do: System.monotonic_time(:millisecond)
 
   defp stop_client(pid) when is_pid(pid) do
     if Process.alive?(pid) do
