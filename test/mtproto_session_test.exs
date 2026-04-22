@@ -149,7 +149,9 @@ defmodule MTProto.SessionTest do
              Session.receive_packet(
                requested_session,
                encrypted,
-               9_000_000_000, padding_bytes: :binary.copy(<<0xCC>>, 64))
+               9_000_000_000,
+               padding_bytes: :binary.copy(<<0xCC>>, 64)
+             )
 
     assert next_session.pending_requests == %{}
 
@@ -216,7 +218,9 @@ defmodule MTProto.SessionTest do
              Session.receive_packet(
                requested_session,
                encrypted,
-               9_000_000_000, padding_bytes: :binary.copy(<<0xCC>>, 128))
+               9_000_000_000,
+               padding_bytes: :binary.copy(<<0xCC>>, 128)
+             )
 
     assert next_session.server_salt == -999
     assert Map.has_key?(next_session.pending_requests, request_id)
