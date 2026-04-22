@@ -9,6 +9,7 @@ defmodule MTProto.Telegram.ClientTest do
   }
 
   alias MTProto.Telegram.{API, Client}
+  alias MTProto.Telegram.RPCError
   alias MTProto.TL.Runtime.Decoded
 
   defmodule FakeSocket do
@@ -97,13 +98,12 @@ defmodule MTProto.Telegram.ClientTest do
     assert_receive {:telegram, ^client,
                     {:rpc_request_error, ^request_id, :help_get_config,
                      ^response_body,
-                     %Decoded{
-                       tl_name: "rpc_error",
-                       type_name: "RpcError",
-                       fields: %{
-                         error_code: 420,
-                         error_message: "FLOOD_WAIT_1"
-                       }
+                     %RPCError{
+                       code: 420,
+                       message: "FLOOD_WAIT_1",
+                       name: "FLOOD_WAIT",
+                       value: 1,
+                       wait_seconds: 1
                      }}}
   end
 
@@ -193,15 +193,13 @@ defmodule MTProto.Telegram.ClientTest do
 
     assert_receive {:sync_result,
                     {:error,
-                     {:rpc_error,
-                      %Decoded{
-                        tl_name: "rpc_error",
-                        type_name: "RpcError",
-                        fields: %{
-                          error_code: 420,
-                          error_message: "FLOOD_WAIT_1"
-                        }
-                      }}}}
+                     %RPCError{
+                       code: 420,
+                       message: "FLOOD_WAIT_1",
+                       name: "FLOOD_WAIT",
+                       value: 1,
+                       wait_seconds: 1
+                     }}}
   end
 
   test "telegram client sends auth.sendCode and emits decoded auth.sentCode results" do

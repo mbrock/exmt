@@ -1,6 +1,7 @@
 defmodule MTProto.TL.RuntimeTest do
   use ExUnit.Case, async: true
 
+  alias MTProto.Telegram.RPCError
   alias MTProto.Telegram.Result
   alias MTProto.TL
   alias MTProto.TL.Runtime
@@ -74,5 +75,48 @@ defmodule MTProto.TL.RuntimeTest do
                 }
               }
             }} = Result.decode(binary, type: "Config")
+  end
+
+  test "extracts structured rpc_error metadata" do
+    decoded =
+      %Decoded{
+        tl_name: "rpc_error",
+        type_name: "RpcError",
+        fields: %{error_code: 420, error_message: "FLOOD_WAIT_12"}
+      }
+
+    assert {:ok,
+            %RPCError{
+              code: 420,
+              message: "FLOOD_WAIT_12",
+              name: "FLOOD_WAIT",
+              value: 12,
+              wait_seconds: 12,
+              migrate_to_dc: nil
+            }} = Result.rpc_error(decoded)
+  end
+
+  test "extracts migrate target from gzip_packed rpc_error" do
+    decoded =
+      %Decoded{
+        tl_name: "gzip_packed",
+        fields: %{
+          unpacked: %Decoded{
+            tl_name: "rpc_error",
+            type_name: "RpcError",
+            fields: %{error_code: 303, error_message: "PHONE_MIGRATE_4"}
+          }
+        }
+      }
+
+    assert {:ok,
+            %RPCError{
+              code: 303,
+              message: "PHONE_MIGRATE_4",
+              name: "PHONE_MIGRATE",
+              value: 4,
+              wait_seconds: nil,
+              migrate_to_dc: 4
+            }} = Result.rpc_error(decoded)
   end
 end

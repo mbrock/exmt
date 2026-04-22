@@ -431,11 +431,15 @@ defmodule MTProto.Telegram.Client do
               {:rpc_result_decoded, request_id, result, decoded}
             )
 
-            if Result.rpc_error?(decoded) do
-              notify_telegram(
-                state,
-                {:rpc_error, request_id, result, decoded}
-              )
+            case Result.rpc_error(decoded) do
+              {:ok, rpc_error} ->
+                notify_telegram(
+                  state,
+                  {:rpc_error, request_id, result, rpc_error}
+                )
+
+              :error ->
+                :ok
             end
 
           {:error, _reason} ->
@@ -469,11 +473,15 @@ defmodule MTProto.Telegram.Client do
                decoded}
             )
 
-            if Result.rpc_error?(decoded) do
-              notify_telegram(
-                next_state,
-                {:rpc_request_error, request_id, request, result, decoded}
-              )
+            case Result.rpc_error(decoded) do
+              {:ok, rpc_error} ->
+                notify_telegram(
+                  next_state,
+                  {:rpc_request_error, request_id, request, result, rpc_error}
+                )
+
+              :error ->
+                :ok
             end
 
             next_state
@@ -594,10 +602,9 @@ defmodule MTProto.Telegram.Client do
     receive do
       {:telegram, ^server_pid,
        {:rpc_request_result_decoded, ^request_id, _request, _result, decoded}} ->
-        if Result.rpc_error?(decoded) do
-          {:error, {:rpc_error, decoded}}
-        else
-          {:ok, decoded}
+        case Result.rpc_error(decoded) do
+          {:ok, rpc_error} -> {:error, rpc_error}
+          :error -> {:ok, decoded}
         end
 
       {:telegram, ^server_pid,

@@ -4,8 +4,9 @@ defmodule Exmt.CLI do
   """
 
   alias Exmt.CLI.Commands.GetConfig
+  alias Exmt.CLI.Commands.Auth.{SendCode, SignIn}
 
-  @commands [GetConfig]
+  @commands [GetConfig, SendCode, SignIn]
 
   @spec main([binary()]) :: no_return()
   def main(argv) do
@@ -26,69 +27,140 @@ defmodule Exmt.CLI do
         print_usage(:stdio)
         :ok
 
-      ["help", command_name] ->
-        print_command_usage(command_name)
+      ["help" | path] ->
+        print_help(path)
 
-      [command_name | args] ->
-        dispatch(command_name, args)
+      command_path ->
+        dispatch(command_path)
     end
   end
 
-  defp dispatch(command_name, args) do
-    case find_command(command_name) do
-      {:ok, command_module} ->
+  defp dispatch(command_path) do
+    case resolve_command(command_path) do
+      {:ok, command_module, args} ->
         command_module.run(args)
 
+      {:incomplete, prefix, commands} ->
+        print_usage(:stderr, prefix, commands)
+        {:error, {:missing_subcommand, prefix}}
+
       :error ->
-        IO.puts(:stderr, "error: unknown command #{inspect(command_name)}")
+        IO.puts(
+          :stderr,
+          "error: unknown command #{inspect(Enum.join(command_path, " "))}"
+        )
+
         print_usage(:stderr)
-        {:error, {:unknown_command, command_name}}
+        {:error, {:unknown_command, command_path}}
     end
   end
 
-  defp print_command_usage(command_name) do
-    case find_command(command_name) do
+  defp print_help(path) do
+    case find_exact_command(path) do
       {:ok, command_module} ->
         IO.puts(command_module.usage())
         :ok
 
       :error ->
-        IO.puts(:stderr, "error: unknown command #{inspect(command_name)}")
-        print_usage(:stderr)
-        {:error, {:unknown_command, command_name}}
+        case commands_with_prefix(path) do
+          [] ->
+            IO.puts(
+              :stderr,
+              "error: unknown command #{inspect(Enum.join(path, " "))}"
+            )
+
+            print_usage(:stderr)
+            {:error, {:unknown_command, path}}
+
+          commands ->
+            print_usage(:stdio, path, commands)
+            :ok
+        end
     end
   end
 
-  defp print_usage(device) do
+  defp print_usage(device, prefix \\ [], commands \\ @commands)
+
+  defp print_usage(device, [], commands) do
     IO.puts(device, """
     usage:
       exmt help
+      exmt help get-config
       exmt get-config
+      exmt auth send-code <phone-number>
+      exmt auth sign-in <phone-number> <phone-code-hash> <phone-code>
 
     commands:
-    #{Enum.map_join(command_summaries(), "\n", &("  " <> &1))}
+    #{Enum.map_join(command_summaries(commands), "\n", &("  " <> &1))}
     """)
   end
 
-  defp command_summaries do
-    Enum.map(@commands, fn command_module ->
+  defp print_usage(device, prefix, commands) do
+    IO.puts(device, """
+    usage:
+      exmt #{Enum.join(prefix, " ")} <subcommand>
+
+    commands:
+    #{Enum.map_join(command_summaries(commands), "\n", &("  " <> &1))}
+    """)
+  end
+
+  defp command_summaries(commands) do
+    Enum.map(commands, fn command_module ->
       aliases =
-        case command_module.aliases() do
+        case Enum.map(command_module.aliases(), &Enum.join(&1, " ")) do
           [] -> ""
           aliases -> " (" <> Enum.join(aliases, ", ") <> ")"
         end
 
-      "#{command_module.command()}#{aliases}  #{command_module.summary()}"
+      "#{Enum.join(command_module.command_path(), " ")}#{aliases}  #{command_module.summary()}"
     end)
   end
 
-  defp find_command(command_name) do
-    Enum.find_value(@commands, :error, fn command_module ->
-      names = [command_module.command() | command_module.aliases()]
-
-      if command_name in names do
+  defp find_exact_command(path) do
+    Enum.find_value(command_entries(), :error, fn {command_path,
+                                                   command_module} ->
+      if command_path == path do
         {:ok, command_module}
       end
     end)
+  end
+
+  defp resolve_command(path) do
+    case Enum.filter(command_entries(), fn {command_path, _command_module} ->
+           prefix_path?(command_path, path)
+         end)
+         |> Enum.sort_by(fn {command_path, _command_module} ->
+           -length(command_path)
+         end) do
+      [{command_path, command_module} | _] ->
+        {:ok, command_module, Enum.drop(path, length(command_path))}
+
+      [] ->
+        case commands_with_prefix(path) do
+          [] -> :error
+          commands -> {:incomplete, path, commands}
+        end
+    end
+  end
+
+  defp commands_with_prefix(prefix) do
+    @commands
+    |> Enum.filter(fn command_module ->
+      prefix_path?(prefix, command_module.command_path()) or
+        Enum.any?(command_module.aliases(), &prefix_path?(prefix, &1))
+    end)
+    |> Enum.uniq()
+  end
+
+  defp command_entries do
+    Enum.flat_map(@commands, fn command_module ->
+      [{command_module.command_path(), command_module}] ++
+        Enum.map(command_module.aliases(), &{&1, command_module})
+    end)
+  end
+
+  defp prefix_path?(prefix, path) do
+    Enum.take(path, length(prefix)) == prefix
   end
 end

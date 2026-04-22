@@ -3,6 +3,7 @@ defmodule MTProto.Telegram.Result do
   Schema-driven decoding helpers for raw Telegram API results.
   """
 
+  alias MTProto.Telegram.RPCError
   alias MTProto.TL.Runtime
   alias MTProto.TL.Runtime.Decoded
 
@@ -23,8 +24,14 @@ defmodule MTProto.Telegram.Result do
   end
 
   @spec rpc_error?(term()) :: boolean()
-  def rpc_error?(%Decoded{type_name: "RpcError"}), do: true
-  def rpc_error?(_decoded), do: false
+  def rpc_error?(decoded) do
+    match?({:ok, _rpc_error}, rpc_error(decoded))
+  end
+
+  @spec rpc_error(term()) :: {:ok, RPCError.t()} | :error
+  def rpc_error(decoded) do
+    RPCError.from_decoded(decoded)
+  end
 
   defp unwrap(
          %Decoded{tl_name: "gzip_packed", fields: %{packed_data: packed_data}} =
