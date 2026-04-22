@@ -6,6 +6,7 @@ defmodule MTProto.TL.Runtime do
   import Bitwise
 
   alias MTProto.TL
+  alias MTProto.TL.JSONSchema
   alias MTProto.TL.{Normalize, Parser}
   alias MTProto.TL.Schema.Definition
   alias MTProto.TL.Schema.Param
@@ -411,10 +412,32 @@ defmodule MTProto.TL.Runtime do
   end
 
   defp load_schema_definitions(schema_name) do
-    schema_path = Path.join(@schemas_dir, "#{schema_name}.tl")
-    {:ok, parsed_schema} = Parser.parse_file(schema_path)
-    normalized_schema = Normalize.normalize(parsed_schema, name: schema_name)
-    normalized_schema.definitions
+    cond do
+      File.exists?(json_schema_path(schema_name)) ->
+        {:ok, normalized_schema} =
+          JSONSchema.load_file(json_schema_path(schema_name),
+            name: schema_name
+          )
+
+        normalized_schema.definitions
+
+      true ->
+        schema_path = tl_schema_path(schema_name)
+        {:ok, parsed_schema} = Parser.parse_file(schema_path)
+
+        normalized_schema =
+          Normalize.normalize(parsed_schema, name: schema_name)
+
+        normalized_schema.definitions
+    end
+  end
+
+  defp json_schema_path(schema_name) do
+    Path.join(@schemas_dir, "#{schema_name}.json")
+  end
+
+  defp tl_schema_path(schema_name) do
+    Path.join(@schemas_dir, "#{schema_name}.tl")
   end
 
   defp bare_constructor?(%Definition{tl_name: tl_name}) do

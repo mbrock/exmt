@@ -15,6 +15,9 @@ defmodule MTProto.Telegram.API do
   @code_settings 0xAD253D78
   @auth_send_code 0xA677244F
   @auth_sign_in 0x8D52A951
+  @input_user_self 0xF7C1B13F
+  @users_get_full_user 0xB60F5918
+  @updates_get_state 0xEDD4882A
 
   @default_layer 214
   @default_device_model "exmt"
@@ -27,6 +30,14 @@ defmodule MTProto.Telegram.API do
 
   @spec help_get_config() :: binary()
   def help_get_config, do: <<@help_get_config::little-unsigned-32>>
+
+  @spec users_get_self() :: binary()
+  def users_get_self do
+    <<@users_get_full_user::little-unsigned-32, input_user_self()::binary>>
+  end
+
+  @spec updates_get_state() :: binary()
+  def updates_get_state, do: <<@updates_get_state::little-unsigned-32>>
 
   @spec code_settings(keyword()) :: {:ok, binary()} | {:error, term()}
   def code_settings(opts \\ []) when is_list(opts) do
@@ -162,6 +173,8 @@ defmodule MTProto.Telegram.API do
 
   defp validate_query(query) when is_binary(query), do: {:ok, query}
   defp validate_query(_query), do: {:error, :invalid_query}
+
+  defp input_user_self, do: <<@input_user_self::little-unsigned-32>>
 
   defp fetch_integer_opt(opts, key, default \\ :missing) do
     case Keyword.fetch(opts, key) do

@@ -49,6 +49,12 @@ defmodule MTProto.Telegram.Client do
     GenServer.call(server, {:begin_auth_key_exchange, opts})
   end
 
+  @spec ping(GenServer.server(), integer(), keyword()) ::
+          :ok | {:error, term()}
+  def ping(server, ping_id, opts \\ []) do
+    GenServer.call(server, {:ping, ping_id, opts})
+  end
+
   @spec connect(GenServer.server(), keyword()) ::
           {:ok, integer()} | {:error, term()}
   def connect(server, opts \\ []) do
@@ -198,6 +204,30 @@ defmodule MTProto.Telegram.Client do
     end
   end
 
+  @spec whoami(GenServer.server(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def whoami(server, opts \\ []) do
+    invoke(
+      server,
+      API.users_get_self(),
+      opts
+      |> Keyword.put_new(:request, :users_get_self)
+      |> Keyword.put_new(:result_type, "users.UserFull")
+    )
+  end
+
+  @spec whoami_sync(GenServer.server(), keyword()) ::
+          {:ok, term()} | {:error, term()}
+  def whoami_sync(server, opts \\ []) do
+    invoke_sync(
+      server,
+      API.users_get_self(),
+      opts
+      |> Keyword.put_new(:request, :users_get_self)
+      |> Keyword.put_new(:result_type, "users.UserFull")
+    )
+  end
+
   @impl true
   def init(opts) do
     Process.flag(:trap_exit, true)
@@ -219,6 +249,10 @@ defmodule MTProto.Telegram.Client do
   def handle_call({:begin_auth_key_exchange, opts}, _from, state) do
     {:reply,
      MTProtoClient.begin_auth_key_exchange(state.mtproto_client, opts), state}
+  end
+
+  def handle_call({:ping, ping_id, opts}, _from, state) do
+    {:reply, MTProtoClient.ping(state.mtproto_client, ping_id, opts), state}
   end
 
   def handle_call({:connect, opts}, _from, state) do

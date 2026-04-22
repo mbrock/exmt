@@ -90,4 +90,14 @@ defmodule MTProto.Telegram.APITest do
                TL.encode_bytes("code-hash")::binary,
                TL.encode_bytes("12345")::binary>>
   end
+
+  test "builds users.getFullUser for the current user" do
+    assert API.users_get_self() ==
+             <<0xB60F5918::little-unsigned-32,
+               0xF7C1B13F::little-unsigned-32>>
+  end
+
+  test "builds updates.getState" do
+    assert API.updates_get_state() == <<0xEDD4882A::little-unsigned-32>>
+  end
 end

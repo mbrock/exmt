@@ -11,6 +11,8 @@ defmodule Exmt.CLITest do
 
     assert output =~ "usage:"
     assert output =~ "get-config"
+    assert output =~ "whoami"
+    assert output =~ "follow"
     assert output =~ "auth send-code"
   end
 

@@ -4,9 +4,10 @@ defmodule Exmt.CLI do
   """
 
   alias Exmt.CLI.Commands.GetConfig
+  alias Exmt.CLI.Commands.{Follow, Whoami}
   alias Exmt.CLI.Commands.Auth.{SendCode, SignIn}
 
-  @commands [GetConfig, SendCode, SignIn]
+  @commands [GetConfig, Whoami, Follow, SendCode, SignIn]
 
   @spec main([binary()]) :: no_return()
   def main(argv) do
@@ -87,6 +88,8 @@ defmodule Exmt.CLI do
       exmt help
       exmt help get-config
       exmt get-config
+      exmt whoami
+      exmt follow
       exmt auth send-code <phone-number>
       exmt auth sign-in <phone-number> <phone-code-hash> <phone-code>
 

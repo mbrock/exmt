@@ -133,4 +133,34 @@ defmodule MTProto.TL.RuntimeTest do
               fields: %{flags: 0, flags2: 0, id: 42}
             }, <<>>} = Runtime.decode(binary, type: "User")
   end
+
+  test "decodes current userFull constructor from official telegram json schema" do
+    binary =
+      <<0xC577B5AD::little-unsigned-32, TL.encode_int(0)::binary,
+        TL.encode_int(0)::binary, TL.encode_long(42)::binary,
+        0xF47741F7::little-unsigned-32, TL.encode_int(0)::binary,
+        0x99622C0C::little-unsigned-32, TL.encode_int(0)::binary,
+        TL.encode_int(0)::binary>>
+
+    assert {:ok,
+            %Decoded{
+              tl_name: "userFull",
+              type_name: "UserFull",
+              constructor_id: 0xC577B5AD,
+              fields: %{
+                flags: 0,
+                flags2: 0,
+                id: 42,
+                common_chats_count: 0,
+                settings: %Decoded{
+                  tl_name: "peerSettings",
+                  fields: %{flags: 0}
+                },
+                notify_settings: %Decoded{
+                  tl_name: "peerNotifySettings",
+                  fields: %{flags: 0}
+                }
+              }
+            }, <<>>} = Runtime.decode(binary, type: "UserFull")
+  end
 end
