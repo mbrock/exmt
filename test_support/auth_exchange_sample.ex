@@ -1,0 +1,185 @@
+defmodule MTProto.TelegramKeys do
+  def sample_pem do
+    """
+    -----BEGIN RSA PUBLIC KEY-----
+    MIIBCgKCAQEAyMEdY1aR+sCR3ZSJrtztKTKqigvO/vBfqACJLZtS7QMgCGXJ6XIR
+    yy7mx66W0/sOFa7/1mAZtEoIokDP3ShoqF4fVNb6XeqgQfaUHd8wJpDWHcR2OFwv
+    plUUI1PLTktZ9uW2WE23b+ixNwJjJGwBDJPQEQFBE+vfmH0JP503wr5INS1poWg/
+    j25sIWeYPHYeOrFp/eXaqhISP6G+q2IeTaWTXpwZj4LzXq5YOpk4bYEQ6mvRq7D1
+    aHWfYmlEGepfaYR8Q0YqvvhYtMte3ITnuSJs171+GDqpdKcSwHnd6FudwGO4pcCO
+    j4WcDuXc2CTHgH8gFTNhp/Y8/SpDOhvn9QIDAQAB
+    -----END RSA PUBLIC KEY-----
+    """
+  end
+
+  def rsa_pad_test_pem do
+    """
+    -----BEGIN RSA PUBLIC KEY-----
+    MIIBCgKCAQEA6LszBcC1LGzyr992NzE0ieY+BSaOW622Aa9Bd4ZHLl+TuFQ4lo4g
+    5nKaMBwK/BIb9xUfg0Q29/2mgIR6Zr9krM7HjuIcCzFvDtr+L0GQjae9H0pRB2OO
+    62cECs5HKhT5DZ98K33vmWiLowc621dQuwKWSQKjWf50XYFw42h21P2KXUGyp2y/
+    +aEyZ+uVgLLQbRA1dEjSDZ2iGRy12Mk5gpYc397aYp438fsJoHIgJ2lgMv5h7WY9
+    t6N/byY9Nw9p21Og3AoXSL2q/2IJ1WRUhebgAdGVMlV1fkuOQoEzR7EdpqtQD9Cs
+    5+bfo3Nhmcyvk5ftB0WkJ9z6bNZ7yxrP8wIDAQAB
+    -----END RSA PUBLIC KEY-----
+    """
+  end
+end
+
+defmodule MTProto.AuthExchangeSample do
+  def step1_nonce do
+    hex("""
+    4e44b426241e8b839153122d44585ac6
+    """)
+  end
+
+  def step1_request do
+    hex("""
+    f18e7ebe4e44b426241e8b839153122d44585ac6
+    """)
+  end
+
+  def step1_response do
+    hex("""
+    632416054e44b426241e8b839153122d44585ac665ba0b393e1094329eda2c42
+    d62833030819546f942a11278d00000015c4b51c0300000003268d20df9858b2
+    029f4ba16d109296216be86c022bb4c3
+    """)
+  end
+
+  def step2_random do
+    hex("""
+    b9dce68b05ef760fa7edfefeff45aaa8afbac11dc3d333bc3132fd16ab816d63
+    ed93c5bef9d0452add8164a2d5df5804277ee5a06fd4523372707ddbd8106d03
+    766d76fb8bec672bdcddcd225f7766b83663b32a0fda1055175c5582edd10430
+    937666be4fd15510ba5f19aa645973b6e4e9270efac25b58741635fe84dd0af0
+    7a4686f750bf34de1073f1e7fa24e9b01a76e537504bd52b8195e5b78c9af2ba
+    a982454e1a99eeae0f35944089ad12726d2433a2c18c9698a725364f9c4e939c
+    e4f1aee3891e58b85de90c88cc2eaef5db1841a594c0edc13cb4b7480a7e564f
+    e892f82282d03ed07eb5ceac6644247bb137241166fe194756dfcffd68c6c345
+    """)
+  end
+
+  def step2_request do
+    hex("""
+    bee412d74e44b426241e8b839153122d44585ac665ba0b393e1094329eda2c42
+    d62833030444b2e50d000000045e63ac8100000003268d20df9858b2fe000100
+    7ec37ca8a84aa1b26d21bc8ac28b261ffa57b44e29f0d6722261e9b436059cc8
+    0ae9768a3ae4fbefe46cfbb76b88a1f80a1ebd95ae5d17bf655ed1015755e04c
+    483a01cf4094a0830864054a71a0ac8a5ec34d6b24a69bf66c9654b32a8c65b0
+    302718351b28f72a9a49610d5259b6edb6da37acc5fedc47d1a09c58df2c7ecc
+    bfaf54dfe123ebc253d9069f74e8be128051e5d280b3c9a5e8d3c6da344cb737
+    4a6d410d4e088cc0eda3d8b1108ba4f4a85d79fbd2758000723780bc5459f59f
+    d1cea1b511b77cc1411781d3feb57b14a97726cf3d2146cf43e648a69ff9cb5d
+    48a31f543bd5bc3a023cf382d86d36bbfbbcb5e4a136acee25fd8e3e597e714d
+    """)
+  end
+
+  def step2_response do
+    hex("""
+    5c07e8d04e44b426241e8b839153122d44585ac665ba0b393e1094329eda2c42
+    d6283303fe500200fd064e91012ade621b26a48ac7dc8b2c8670ed67092a00fe
+    8c936483e4b02822c3cc655aaffe00542e311df5abdaa645b1da85ca50a6c7b0
+    e7cc7cb2b23d42c84e288bb3b5cfe313e1ebafe19833916df4d1f58dba62e0ac
+    49cac17a31b8b0d57d43eefda546d67e80e311c4b213adec9635c73f75a18ffb
+    26fb71391523bd5ddfcc8be51b36d6b2552394c511ec935d53811a981baca62a
+    2b58cbfe96f1b35e118e5e17456994aea931839925c4578f281f3f129d28026e
+    c80224617a9ca8c615a12fba9c53e774476567f07b01a59d2e6635e39c16dc0a
+    54679f3b54b0482f1cbeac821147d93d7365f4e23fb5794eb5fd4ffdc6456638
+    ea32f641f49ee705e7b0da71cb75753e2f4f80d5af07edb017948f332e34a9c5
+    886b0c86281e0e7228d5a652a9faaf819f7686c099186169aaa377c136fac57b
+    69b7f7b383aaece652f8dcb14e0dfb23e2a65330307a74c31c508cc504450fa2
+    08eee14d8bbead1c1f90ccfc183ae1d3345c62424ea3477776204e8fe69efbb6
+    a27b168913d3babaca30aa1c9589d6655b2ad4cd59f67e9b3957ab3270d70afa
+    b9bd488a6c5f39ca739ca8947def00cdb8812152731710f5108235775a019d3b
+    4986d6b720b05167b4ee731a10a29fc1e03c42e99d8ff5cf64f45070c2f5ce48
+    5ea5fddc281728b6e4d0dea561c9097e3f8a54b055b0c069a9f8207520f6429e
+    b5225c985e3379f2cf6754f56d414fcd00d502e69223b911b915978e0890a9ef
+    128715b828bf3fda3fee6c7b9b2621d971a6f7820f89f4c4c2ab29dec00007c3
+    ec6cead64f7f5802d5e6a4a16a185cfbfced5351fa68380e
+    """)
+  end
+
+  def step3_random do
+    hex("""
+    8fc3605a4604cbb5461fdeff439c761150083cdd502550558e92c730d46c9caf
+    0b1b2d64d2c264942c50d98694fff604fdd2bd87f2cafb719bc55e65a1f60b08
+    809660a650721c40d56fc9c792df1d463aad1718c6924b7bdffbe395f14633d3
+    3fc38ce47c18a1561b83a5c66d29f9e292637127471c3baab0028ae42796b689
+    e53a7f9ab5f0ee6d3fb658d847c1abca509fc4ed0d45edbb1c946488910d8d78
+    fa0767255b57a7c3898da8d26625bde40c5a0e80b581408ecd95a17d396dc757
+    4a8ed3cbc4c085197ffaad29c18e577eb292aa8b98caa92efd6f9536049b5a7d
+    efc861e270eca90c55b9585405cb96f3e6ea754850b09e7a59ba5fd92d357982
+    915d39752aaa2ec16b6cbde6a6c33971
+    """)
+  end
+
+  def step3_now, do: 1_693_436_740
+
+  def step3_request do
+    hex("""
+    1f5f04f54e44b426241e8b839153122d44585ac665ba0b393e1094329eda2c42
+    d6283303fe500100def448d48c608480bab65df3f8990be8011f7b415a6f8113
+    617bea749b8b0ea6a937987b18cc4dcce8197efdcf8d6ec6af7fc3364b4945df
+    77e4a1ae9db7acea4abcd73247edb36bde20fc969c1d55717277afe0bc31a9ee
+    99f7d822f91fa2dc69c868a19511b162d55e0814d0292b7708b67d57eb045693
+    49d5a20ffe85c0141fc17e9bbbaf207bef56e66decda718c52c45273f868c2ef
+    f89bb06355cd515fbfe123d719b244234867d2889c9d0e4436ba644076e5014a
+    78af60b2f0e1b30285f4f71539bcf8c506ccafd62cfcd1b040fe5e35bb30e519
+    ad56d753100f604e3ea5d02409d74dd3ab0861227410f1e13591cf2a638347e6
+    c6d0bcae14e0e8753313b51daee40a67407b5cc8b213856a290a0c7b6cda9ff9
+    c58d69faaf6a748cff05512b69f1380f7a36843edecdc764048bc16d9808f353
+    a9caf6d49ca8b717c8f6de037518a444931a7da2b80f16d0
+    """)
+  end
+
+  def step3_response do
+    hex("""
+    34f7cb3b4e44b426241e8b839153122d44585ac665ba0b393e1094329eda2c42
+    d628330313b781a0de4ab6bc7ab414cbe13f9f86
+    """)
+  end
+
+  def expected_auth_key do
+    hex("""
+    7582e48ad36cd6eef7944ac9bd7027de9ee3202543b68850ac01e1221350f717
+    4e6c3771c9d86b3075f777539c23d053e9da9a1510d49e8fa0ad76a016ce28bf
+    e3543dde69959bc682dab762b95a36629a8438e65baa53cc79b551c23d555c76
+    75a36f4ece90882ece497d28a903409b780a8a80516cb0f8534fee3a67530beb
+    2b1929626e07c2a052c4870b18b0a626606ca05cb13668a65aee3fa32cbebf1b
+    3a56532138cb22c017cac44a292021902eea9b9f906c6be19c9203c7bb3ebc5f
+    1b2044d0a90cb008f7248c3ae4449e0895b6090abb04c24131c2948bd27d879e
+    cb934e50a46671f987653385ab388e4fa1ddd4c95743111e08bf11fef1f8f739
+    """)
+  end
+
+  def expected_server_salt, do: 4_459_407_212_920_268_508
+  def expected_time_offset, do: 0
+
+  def rsa_pad_plaintext do
+    :binary.copy("a", 144)
+  end
+
+  def rsa_pad_random_bytes do
+    :binary.copy(<<0>>, 224)
+  end
+
+  def rsa_pad_expected_ciphertext do
+    hex("""
+    bf68719e836806b040cd261ecaf66eb3c4ba19f3bbea3031b2e6cf29167bab64
+    7201d101b291dc5b716a42e789a38d947fe59e9bcce8f30ef46a946743ea8b6b
+    abbce7fc0afc46b802aa453e83471d82a4dfad83f971f350b4b4fb474cd1c48f
+    df427e4b5fecce9ec3178ae7dac3985856fdefa21d6fdc5e0e0fd8a57bc4f515
+    80d637d372be8d87c9aa3fde8e6f8287bcb3be846aadcdd59465375479e248f6
+    2ed438f9804fbe36d41ca906243a5f740f3937949aa149ba8a8b8e68b3f3e1e3
+    cd3f946387520e21eee55845e1f015a919a22f6a72bfaecd2cae946c91983b41
+    f9ffabe97963bbde8f30eaf5fd3c5b8cecab8711bd269e441b6084f385726ff0
+    """)
+  end
+
+  defp hex(data) do
+    data
+    |> String.replace(~r/[^0-9A-Fa-f]/, "")
+    |> Base.decode16!(case: :mixed)
+  end
+end

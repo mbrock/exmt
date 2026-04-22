@@ -5,6 +5,19 @@ defmodule MTProto.TL do
 
   @vector_constructor 0x1CB5C415
 
+  @spec encode_int(integer()) :: binary()
+  def encode_int(value)
+      when is_integer(value) and value >= -0x8000_0000 and
+             value <= 0x7FFF_FFFF do
+    <<value::little-signed-32>>
+  end
+
+  @spec decode_int(binary()) :: {:ok, integer(), binary()} | {:error, term()}
+  def decode_int(<<value::little-signed-32, rest::binary>>),
+    do: {:ok, value, rest}
+
+  def decode_int(_), do: {:error, :short_int}
+
   @spec encode_long(non_neg_integer()) :: binary()
   def encode_long(value)
       when is_integer(value) and value >= 0 and value <= 0xFFFF_FFFF_FFFF_FFFF do
@@ -18,12 +31,27 @@ defmodule MTProto.TL do
 
   def decode_long(_), do: {:error, :short_long}
 
+  @spec encode_int128(binary()) :: binary()
+  def encode_int128(value) when is_binary(value) and byte_size(value) == 16,
+    do: value
+
   @spec decode_int128(binary()) ::
           {:ok, binary(), binary()} | {:error, term()}
   def decode_int128(<<value::binary-size(16), rest::binary>>),
     do: {:ok, value, rest}
 
   def decode_int128(_), do: {:error, :short_int128}
+
+  @spec encode_int256(binary()) :: binary()
+  def encode_int256(value) when is_binary(value) and byte_size(value) == 32,
+    do: value
+
+  @spec decode_int256(binary()) ::
+          {:ok, binary(), binary()} | {:error, term()}
+  def decode_int256(<<value::binary-size(32), rest::binary>>),
+    do: {:ok, value, rest}
+
+  def decode_int256(_), do: {:error, :short_int256}
 
   @spec encode_bytes(binary()) :: binary()
   def encode_bytes(value) when is_binary(value) do
