@@ -101,11 +101,11 @@ defmodule MTProto.SessionData do
   @spec to_map(t()) :: map()
   def to_map(%__MODULE__{} = session_data) do
     %{
-      version: @version,
-      auth_key_data: session_data.auth_key_data,
-      server_salt: session_data.server_salt,
-      time_offset: session_data.time_offset,
-      dc_id: session_data.dc_id
+      "version" => @version,
+      "auth_key_data" => session_data.auth_key_data,
+      "server_salt" => session_data.server_salt,
+      "time_offset" => session_data.time_offset,
+      "dc_id" => session_data.dc_id
     }
   end
 

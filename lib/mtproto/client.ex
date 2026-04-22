@@ -16,7 +16,13 @@ defmodule MTProto.Client do
 
   alias MTProto.{SessionData, TCPConnection}
 
-  @client_opts [:name, :notify_to, :session_data, :session_store]
+  @client_opts [
+    :name,
+    :notify_to,
+    :session_data,
+    :session_store,
+    :load_session_data
+  ]
 
   @type session_store :: {module(), term()} | nil
 
@@ -176,7 +182,10 @@ defmodule MTProto.Client do
         {:error, :invalid_session_data}
 
       :error ->
-        load_session_data(session_store)
+        load_session_data(
+          session_store,
+          Keyword.get(opts, :load_session_data, true)
+        )
     end
   end
 
@@ -189,9 +198,10 @@ defmodule MTProto.Client do
   defp normalize_session_store(_session_store),
     do: {:error, :invalid_session_store}
 
-  defp load_session_data(nil), do: {:ok, nil}
+  defp load_session_data(_session_store, false), do: {:ok, nil}
+  defp load_session_data(nil, true), do: {:ok, nil}
 
-  defp load_session_data({module, key}) do
+  defp load_session_data({module, key}, true) do
     case module.load(key) do
       {:ok, %SessionData{} = session_data} ->
         {:ok, session_data}
