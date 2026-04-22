@@ -1,11 +1,14 @@
-defmodule MTProto.TL.JSONSchema do
+defmodule MTProto.TL.VendoredSchema do
   @moduledoc """
-  Loads Telegram TL schema definitions from the official JSON schema snapshot.
+  Loads vendored Telegram TL schema definitions from Elixir term snapshots.
 
-  The runtime decoder only needs normalized constructor metadata, and Telegram's
-  official JSON schema already contains constructor IDs, params, and result
-  types. This module converts that JSON into the same normalized schema IR used
-  by the TL-file path, so the decoder can stay unchanged.
+  The snapshot files under `priv/tl/*.exs` are evaluated at compile time via
+  `@external_resource`, so the decoder has no runtime JSON dependency. The
+  snapshot shape mirrors Telegram's official schema JSON:
+
+      %{"constructors" => [%{"id" => ..., "predicate" => ..., "params" => [...], "type" => ...}, ...]}
+
+  Refresh the snapshot with `mix tl.fetch_telegram_schema`.
   """
 
   alias MTProto.TL.AST
@@ -14,20 +17,38 @@ defmodule MTProto.TL.JSONSchema do
 
   @u32_modulus 4_294_967_296
 
-  @spec load_file(Path.t(), keyword()) ::
-          {:ok, NormalizedSchema.t()} | {:error, term()}
-  def load_file(path, opts) do
-    schema_name = Keyword.fetch!(opts, :name)
+  @schema_files %{
+    telegram_api: Path.expand("../../../priv/tl/telegram_api.exs", __DIR__)
+  }
 
-    with {:ok, json} <- File.read(path),
-         {:ok, %{"constructors" => constructors}} <- JSON.decode(json),
-         {:ok, definitions} <-
-           load_entries(constructors, :constructor, []) do
+  for {_name, path} <- @schema_files do
+    @external_resource path
+  end
+
+  @schemas (for {name, path} <- @schema_files, into: %{} do
+              {term, _bindings} = Code.eval_file(path)
+              {name, term}
+            end)
+
+  @spec available?(atom()) :: boolean()
+  def available?(schema_name), do: Map.has_key?(@schemas, schema_name)
+
+  @spec load(atom()) :: {:ok, NormalizedSchema.t()} | {:error, term()}
+  def load(schema_name) do
+    with {:ok, %{"constructors" => constructors}} <- fetch_schema(schema_name),
+         {:ok, definitions} <- load_entries(constructors, :constructor, []) do
       {:ok,
        Normalize.normalize(
          %AST.Schema{items: definitions},
          name: schema_name
        )}
+    end
+  end
+
+  defp fetch_schema(schema_name) do
+    case Map.fetch(@schemas, schema_name) do
+      {:ok, schema} -> {:ok, schema}
+      :error -> {:error, {:unknown_schema, schema_name}}
     end
   end
 
@@ -50,7 +71,7 @@ defmodule MTProto.TL.JSONSchema do
         {:ok, definition}
 
       {:error, error} ->
-        {:error, {:invalid_json_schema_entry, kind, line, error}}
+        {:error, {:invalid_schema_entry, kind, line, error}}
     end
   end
 

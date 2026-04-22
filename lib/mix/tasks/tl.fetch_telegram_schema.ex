@@ -1,19 +1,20 @@
-defmodule Mix.Tasks.Tl.FetchTelegramJson do
+defmodule Mix.Tasks.Tl.FetchTelegramSchema do
   use Mix.Task
 
   @compile {:no_warn_undefined, {:httpc, :request, 4}}
 
-  @shortdoc "Fetch the official Telegram schema JSON snapshot"
+  @shortdoc "Fetch the official Telegram schema snapshot as an Elixir term"
 
   @moduledoc """
-  Fetches the official Telegram schema JSON snapshot into `priv/tl`.
+  Fetches the official Telegram schema JSON snapshot and writes it to
+  `priv/tl/telegram_api.exs` as a pretty-printed Elixir term.
 
-      mix tl.fetch_telegram_json
-      mix tl.fetch_telegram_json --url https://core.telegram.org/schema/json
+      mix tl.fetch_telegram_schema
+      mix tl.fetch_telegram_schema --url https://core.telegram.org/schema/json
   """
 
   @default_url "https://core.telegram.org/schema/json"
-  @default_output "priv/tl/telegram_api.json"
+  @default_output "priv/tl/telegram_api.exs"
 
   @impl Mix.Task
   def run(args) do
@@ -39,8 +40,9 @@ defmodule Mix.Tasks.Tl.FetchTelegramJson do
                :httpc.request(:get, {String.to_charlist(url), []}, [],
                  body_format: :binary
                ),
+             {:ok, schema} <- JSON.decode(body),
              :ok <- File.mkdir_p(Path.dirname(output)),
-             :ok <- File.write(output, body) do
+             :ok <- File.write(output, format(schema)) do
           Mix.shell().info("wrote #{Path.relative_to_cwd(output)}")
         else
           {:ok, {{_version, status, reason}, _headers, _body}} ->
@@ -50,5 +52,14 @@ defmodule Mix.Tasks.Tl.FetchTelegramJson do
             Mix.raise("fetch failed: #{inspect(reason)}")
         end
     end
+  end
+
+  defp format(schema) do
+    inspect(schema,
+      limit: :infinity,
+      printable_limit: :infinity,
+      pretty: true,
+      width: 120
+    ) <> "\n"
   end
 end

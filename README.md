@@ -18,7 +18,7 @@ Current working pieces include:
 - pure auth-key exchange
 - pure MTProto session state and encrypted request tracking
 - Telegram API wrapping and schema-driven result decoding
-- official Telegram schema JSON vendored at `priv/tl/telegram_api.json`
+- official Telegram schema vendored as an Elixir term at `priv/tl/telegram_api.exs`
 - a working CLI that can:
   - `get-config`
   - `auth send-code`
@@ -127,15 +127,19 @@ By default the CLI stores:
 
 ## Schema
 
-Telegram result decoding uses the official JSON schema snapshot in `priv/tl/telegram_api.json`.
+Telegram result decoding uses the official schema snapshot, vendored as a
+pretty-printed Elixir term at `priv/tl/telegram_api.exs` and compiled in via
+`@external_resource` (see `MTProto.TL.VendoredSchema`). There is no runtime
+JSON dependency.
 
 Refresh it with:
 
 ```bash
-mix tl.fetch_telegram_json
+mix tl.fetch_telegram_schema
 ```
 
-There is still TL tooling in the repo for other schema/codegen work, but the Telegram runtime decode path now prefers the official JSON snapshot.
+There is still TL tooling in the repo for other schema/codegen work, but the
+Telegram runtime decode path now prefers the vendored snapshot.
 
 ## Project Direction
 
