@@ -3,7 +3,13 @@
 ## Build setup (from a fresh machine)
 
 The project pins Erlang/OTP 28.3.1 and Elixir 1.19.5-otp-28 via `.tool-versions`.
-Ubuntu's apt ships Elixir 1.14 / OTP 25, which is too old — do not use it.
+
+Do not try `apt install elixir` on Ubuntu 24.04 — it ships Elixir 1.14 / OTP 25,
+and both `mix.exs` files declare `elixir: "~> 1.19"`, so Mix refuses immediately:
+
+> `(Mix) You're trying to run :exmt on Elixir v1.14.0 but it has declared in its mix.exs file it supports only Elixir ~> 1.19`
+
+Verified on 2026-04-22. Install the pinned toolchain via mise instead.
 
 ### Install the toolchain with mise
 
