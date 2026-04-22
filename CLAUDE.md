@@ -4,10 +4,15 @@
 
 The project pins Erlang/OTP 28.3.1 and Elixir 1.19.5-otp-28 via `.tool-versions`.
 
-Do not try `apt install elixir` on Ubuntu 24.04 — it ships Elixir 1.14 / OTP 25,
-and both `mix.exs` files declare `elixir: "~> 1.19"`, so Mix refuses immediately:
+Do not try `apt install elixir` on Ubuntu 24.04. It ships Elixir 1.14 / OTP 25:
 
-> `(Mix) You're trying to run :exmt on Elixir v1.14.0 but it has declared in its mix.exs file it supports only Elixir ~> 1.19`
+- With `elixir: "~> 1.19"` in `mix.exs` (current), Mix refuses up front:
+  `(Mix) You're trying to run :exmt on Elixir v1.14.0 but it has declared in its mix.exs file it supports only Elixir ~> 1.19`
+- Relaxing to `~> 1.14` lets compile pass (with 2 warnings), but runtime
+  crashes with `function JSON.decode/1 is undefined` — the built-in `JSON`
+  module was added in Elixir 1.18. 9/62 tests fail on that path, and every
+  CLI command beyond `help` would crash. Don't relax the requirement without
+  also replacing `MTProto.TL.JSONSchema.load_file/2`'s `JSON.decode` call.
 
 Verified on 2026-04-22. Install the pinned toolchain via mise instead.
 
