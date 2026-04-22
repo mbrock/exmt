@@ -119,4 +119,18 @@ defmodule MTProto.TL.RuntimeTest do
               migrate_to_dc: 4
             }} = Result.rpc_error(decoded)
   end
+
+  test "decodes current user constructor from vendored telegram schema" do
+    binary =
+      <<0x020B1422::little-unsigned-32, TL.encode_int(0)::binary,
+        TL.encode_int(0)::binary, TL.encode_long(42)::binary>>
+
+    assert {:ok,
+            %Decoded{
+              tl_name: "user",
+              type_name: "User",
+              constructor_id: 0x020B1422,
+              fields: %{flags: 0, flags2: 0, id: 42}
+            }, <<>>} = Runtime.decode(binary, type: "User")
+  end
 end

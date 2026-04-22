@@ -106,35 +106,7 @@ defmodule Exmt.CLI.Telegram do
                                     {:ok, term()} | {:error, term()})) ::
           {:ok, term()} | {:error, term()}
   def try_endpoints(context, fun) when is_function(fun, 2) do
-    Enum.reduce_while(context.endpoints, {:error, []}, fn endpoint,
-                                                          {:error, errors} ->
-      IO.puts("Trying #{format_endpoint(endpoint)}")
-
-      case with_client(context, endpoint, fn client ->
-             fun.(client, endpoint)
-           end) do
-        {:ok, result} ->
-          {:halt, {:ok, result}}
-
-        {:error, reason} ->
-          IO.puts(
-            :stderr,
-            "  failed: #{format_endpoint(endpoint)}: #{format_error(reason)}"
-          )
-
-          {:cont, {:error, [{endpoint, reason} | errors]}}
-      end
-    end)
-    |> case do
-      {:ok, result} ->
-        {:ok, result}
-
-      {:error, []} ->
-        {:error, :no_endpoints}
-
-      {:error, errors} ->
-        {:error, {:all_endpoints_failed, Enum.reverse(errors)}}
-    end
+    do_try_endpoints(context.endpoints, context, fun, [])
   end
 
   @spec connect(pid(), context()) :: {:ok, integer()} | {:error, term()}
@@ -231,6 +203,86 @@ defmodule Exmt.CLI.Telegram do
       :error ->
         @bootstrap_endpoints
     end
+  end
+
+  defp do_try_endpoints([], _context, _fun, []), do: {:error, :no_endpoints}
+
+  defp do_try_endpoints([], _context, _fun, errors) do
+    {:error, {:all_endpoints_failed, Enum.reverse(errors)}}
+  end
+
+  defp do_try_endpoints([endpoint | rest], context, fun, errors) do
+    IO.puts("Trying #{format_endpoint(endpoint)}")
+
+    case with_client(context, endpoint, fn client ->
+           fun.(client, endpoint)
+         end) do
+      {:ok, result} ->
+        {:ok, result}
+
+      {:error, reason} ->
+        IO.puts(
+          :stderr,
+          "  failed: #{format_endpoint(endpoint)}: #{format_error(reason)}"
+        )
+
+        errors = [{endpoint, reason} | errors]
+
+        case retry_step(reason, endpoint, rest, context) do
+          {:continue, next_endpoints} ->
+            do_try_endpoints(next_endpoints, context, fun, errors)
+
+          {:halt, reason} ->
+            {:error, reason}
+        end
+    end
+  end
+
+  defp retry_step(%RPCError{migrate_to_dc: dc_id}, endpoint, rest, context)
+       when is_integer(dc_id) and dc_id != endpoint.dc_id do
+    case take_endpoint_by_dc(rest ++ context.endpoints, dc_id) do
+      {nil, next_endpoints} ->
+        {:continue, next_endpoints}
+
+      {target_endpoint, next_endpoints} ->
+        {:continue, [target_endpoint | next_endpoints]}
+    end
+  end
+
+  defp retry_step(%RPCError{} = reason, _endpoint, _rest, _context),
+    do: {:halt, reason}
+
+  defp retry_step(
+         {:decode_error, _reason} = reason,
+         _endpoint,
+         _rest,
+         _context
+       ),
+       do: {:halt, reason}
+
+  defp retry_step(:rpc_timeout, _endpoint, rest, _context),
+    do: {:continue, rest}
+
+  defp retry_step(:session_timeout, _endpoint, rest, _context),
+    do: {:continue, rest}
+
+  defp retry_step({:connection_exit, _reason}, _endpoint, rest, _context),
+    do: {:continue, rest}
+
+  defp retry_step(_reason, _endpoint, rest, _context),
+    do: {:continue, rest}
+
+  defp take_endpoint_by_dc(endpoints, dc_id) do
+    Enum.reduce(endpoints, {nil, []}, fn endpoint, {found, acc} ->
+      cond do
+        endpoint.dc_id == dc_id and is_nil(found) ->
+          {endpoint, acc}
+
+        true ->
+          {found, [endpoint | acc]}
+      end
+    end)
+    |> then(fn {found, rest} -> {found, Enum.reverse(rest)} end)
   end
 
   defp fetch_required_env(required) do
