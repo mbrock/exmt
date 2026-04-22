@@ -32,7 +32,7 @@ defmodule MTProto.Scripts.HelpGetConfig do
 
     try do
       with {:ok, opts} <- parse_args(argv),
-           {:ok, api_id, api_id_source} <- fetch_api_id(opts),
+           {:ok, api_id, api_id_source} <- fetch_api_id(),
            endpoints = endpoints(opts),
            :ok <- print_banner(api_id_source, endpoints, opts),
            {:ok, summary} <- try_endpoints(endpoints, api_id, opts) do
@@ -53,9 +53,7 @@ defmodule MTProto.Scripts.HelpGetConfig do
     {opts, rest, invalid} =
       OptionParser.parse(argv,
         strict: [
-          api_id: :integer,
           dc_id: :integer,
-          env_file: :string,
           host: :string,
           port: :integer,
           timeout: :integer,
@@ -276,18 +274,9 @@ defmodule MTProto.Scripts.HelpGetConfig do
       {:error, {:gzip_error, error}}
   end
 
-  defp fetch_api_id(opts) do
-    with :error <- fetch_api_id_from_opts(opts),
-         :error <- fetch_api_id_from_env(),
-         :error <- fetch_api_id_from_files(opts) do
+  defp fetch_api_id do
+    with :error <- fetch_api_id_from_env() do
       {:error, :missing_api_id}
-    end
-  end
-
-  defp fetch_api_id_from_opts(opts) do
-    case Keyword.fetch(opts, :api_id) do
-      {:ok, api_id} -> {:ok, api_id, :command_line}
-      :error -> :error
     end
   end
 
@@ -296,28 +285,6 @@ defmodule MTProto.Scripts.HelpGetConfig do
       case System.get_env(env_var) do
         nil -> nil
         value -> parse_api_id(value, {:env, env_var})
-      end
-    end)
-  end
-
-  defp fetch_api_id_from_files(opts) do
-    opts
-    |> env_files()
-    |> Enum.find_value(:error, fn path ->
-      case File.read(path) do
-        {:ok, contents} -> parse_api_id_from_file(contents, path)
-        {:error, _reason} -> nil
-      end
-    end)
-  end
-
-  defp parse_api_id_from_file(contents, path) do
-    Enum.find_value(@api_id_env_vars, nil, fn env_var ->
-      regex = ~r/^\s*(?:export\s+)?#{env_var}\s*=\s*(.+?)\s*$/m
-
-      case Regex.run(regex, contents, capture: :all_but_first) do
-        [value] -> parse_api_id(value, {:file, path, env_var})
-        _ -> nil
       end
     end)
   end
@@ -361,20 +328,6 @@ defmodule MTProto.Scripts.HelpGetConfig do
       :error ->
         @bootstrap_endpoints
     end
-  end
-
-  defp env_files(opts) do
-    [
-      Keyword.get(opts, :env_file),
-      Path.expand(".env"),
-      Path.expand(".envrc"),
-      Path.expand("~/.env"),
-      Path.expand("~/.envrc"),
-      Path.expand("~/froth/.env"),
-      Path.expand("~/froth/.envrc")
-    ]
-    |> Enum.reject(&is_nil/1)
-    |> Enum.uniq()
   end
 
   defp print_banner(api_id_source, endpoints, opts) do
@@ -445,11 +398,7 @@ defmodule MTProto.Scripts.HelpGetConfig do
 
   defp format_result(other), do: inspect(other, pretty: true)
 
-  defp format_api_id_source(:command_line), do: "the command line"
   defp format_api_id_source({:env, env_var}), do: "$#{env_var}"
-
-  defp format_api_id_source({:file, path, env_var}),
-    do: "#{path} (#{env_var})"
 
   defp format_error({:invalid_switches, invalid}), do: inspect(invalid)
   defp format_error({:unexpected_arguments, args}), do: inspect(args)
@@ -513,7 +462,7 @@ defmodule MTProto.Scripts.HelpGetConfig do
     usage:
       mix run scripts/help_get_config.exs
       mix run scripts/help_get_config.exs --host 149.154.167.50 --dc-id 2
-      mix run scripts/help_get_config.exs --api-id 123456 --timeout 60000 --verbose
+      TDLIB_API_ID=123456 mix run scripts/help_get_config.exs --timeout 60000 --verbose
     """)
   end
 end
