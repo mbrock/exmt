@@ -8,6 +8,7 @@ defmodule MTProto.Telegram.API do
   """
 
   alias MTProto.TL
+  alias MTProto.Telegram.Request
 
   @invoke_with_layer 0xDA9B0D0D
   @init_connection 0xC1CD5EA9
@@ -39,30 +40,58 @@ defmodule MTProto.Telegram.API do
   @spec current_layer() :: integer()
   def current_layer, do: @default_layer
 
-  @spec help_get_config() :: binary()
-  def help_get_config, do: <<@help_get_config::little-unsigned-32>>
-
-  @spec users_get_self() :: binary()
-  def users_get_self do
-    <<@users_get_full_user::little-unsigned-32, input_user_self()::binary>>
+  @spec help_get_config(keyword()) :: Request.t()
+  def help_get_config(_opts \\ []) do
+    request(
+      <<@help_get_config::little-unsigned-32>>,
+      :help_get_config,
+      "Config"
+    )
   end
 
-  @spec updates_get_state() :: binary()
-  def updates_get_state, do: <<@updates_get_state::little-unsigned-32>>
+  @spec users_get_self(keyword()) :: Request.t()
+  def users_get_self(_opts \\ []) do
+    request(
+      <<@users_get_full_user::little-unsigned-32, input_user_self()::binary>>,
+      :users_get_self,
+      "users.UserFull"
+    )
+  end
 
-  @spec help_get_nearest_dc() :: binary()
-  def help_get_nearest_dc, do: <<@help_get_nearest_dc::little-unsigned-32>>
+  @spec updates_get_state(keyword()) :: Request.t()
+  def updates_get_state(_opts \\ []) do
+    request(
+      <<@updates_get_state::little-unsigned-32>>,
+      :updates_get_state,
+      "updates.State"
+    )
+  end
 
-  @spec contacts_get_contacts(keyword()) :: {:ok, binary()} | {:error, term()}
+  @spec help_get_nearest_dc(keyword()) :: Request.t()
+  def help_get_nearest_dc(_opts \\ []) do
+    request(
+      <<@help_get_nearest_dc::little-unsigned-32>>,
+      :help_get_nearest_dc,
+      "NearestDc"
+    )
+  end
+
+  @spec contacts_get_contacts(keyword()) ::
+          {:ok, Request.t()} | {:error, term()}
   def contacts_get_contacts(opts \\ []) when is_list(opts) do
     with {:ok, hash} <- fetch_long_opt(opts, :hash, 0) do
       {:ok,
-       <<@contacts_get_contacts::little-unsigned-32,
-         TL.encode_long(hash)::binary>>}
+       request(
+         <<@contacts_get_contacts::little-unsigned-32,
+           TL.encode_long(hash)::binary>>,
+         :contacts_get_contacts,
+         "contacts.Contacts"
+       )}
     end
   end
 
-  @spec messages_get_dialogs(keyword()) :: {:ok, binary()} | {:error, term()}
+  @spec messages_get_dialogs(keyword()) ::
+          {:ok, Request.t()} | {:error, term()}
   def messages_get_dialogs(opts \\ []) when is_list(opts) do
     with {:ok, exclude_pinned} <-
            fetch_boolean_opt(opts, :exclude_pinned, false),
@@ -79,21 +108,26 @@ defmodule MTProto.Telegram.API do
         |> put_flag(1, not is_nil(folder_id))
 
       {:ok,
-       [
-         <<@messages_get_dialogs::little-unsigned-32>>,
-         TL.encode_int(flags),
-         maybe_encode_int(folder_id),
-         TL.encode_int(offset_date),
-         TL.encode_int(offset_id),
-         offset_peer,
-         TL.encode_int(limit),
-         TL.encode_long(hash)
-       ]
-       |> IO.iodata_to_binary()}
+       request(
+         [
+           <<@messages_get_dialogs::little-unsigned-32>>,
+           TL.encode_int(flags),
+           maybe_encode_int(folder_id),
+           TL.encode_int(offset_date),
+           TL.encode_int(offset_id),
+           offset_peer,
+           TL.encode_int(limit),
+           TL.encode_long(hash)
+         ]
+         |> IO.iodata_to_binary(),
+         :messages_get_dialogs,
+         "messages.Dialogs"
+       )}
     end
   end
 
-  @spec messages_get_history(keyword()) :: {:ok, binary()} | {:error, term()}
+  @spec messages_get_history(keyword()) ::
+          {:ok, Request.t()} | {:error, term()}
   def messages_get_history(opts) when is_list(opts) do
     with {:ok, peer} <- fetch_input_peer_opt(opts, :peer, :self),
          {:ok, offset_id} <- fetch_integer_opt(opts, :offset_id, 0),
@@ -104,23 +138,27 @@ defmodule MTProto.Telegram.API do
          {:ok, min_id} <- fetch_integer_opt(opts, :min_id, 0),
          {:ok, hash} <- fetch_long_opt(opts, :hash, 0) do
       {:ok,
-       [
-         <<@messages_get_history::little-unsigned-32>>,
-         peer,
-         TL.encode_int(offset_id),
-         TL.encode_int(offset_date),
-         TL.encode_int(add_offset),
-         TL.encode_int(limit),
-         TL.encode_int(max_id),
-         TL.encode_int(min_id),
-         TL.encode_long(hash)
-       ]
-       |> IO.iodata_to_binary()}
+       request(
+         [
+           <<@messages_get_history::little-unsigned-32>>,
+           peer,
+           TL.encode_int(offset_id),
+           TL.encode_int(offset_date),
+           TL.encode_int(add_offset),
+           TL.encode_int(limit),
+           TL.encode_int(max_id),
+           TL.encode_int(min_id),
+           TL.encode_long(hash)
+         ]
+         |> IO.iodata_to_binary(),
+         :messages_get_history,
+         "messages.Messages"
+       )}
     end
   end
 
   @spec messages_send_message(binary(), keyword()) ::
-          {:ok, binary()} | {:error, term()}
+          {:ok, Request.t()} | {:error, term()}
   def messages_send_message(message, opts \\ [])
       when is_binary(message) and is_list(opts) do
     with {:ok, peer} <- fetch_input_peer_opt(opts, :peer, :self),
@@ -135,19 +173,23 @@ defmodule MTProto.Telegram.API do
         |> put_flag(7, clear_draft)
 
       {:ok,
-       [
-         <<@messages_send_message::little-unsigned-32>>,
-         TL.encode_int(flags),
-         peer,
-         TL.encode_bytes(message),
-         TL.encode_signed_long(random_id)
-       ]
-       |> IO.iodata_to_binary()}
+       request(
+         [
+           <<@messages_send_message::little-unsigned-32>>,
+           TL.encode_int(flags),
+           peer,
+           TL.encode_bytes(message),
+           TL.encode_signed_long(random_id)
+         ]
+         |> IO.iodata_to_binary(),
+         :messages_send_message,
+         "Updates"
+       )}
     end
   end
 
   @spec updates_get_difference(MTProto.Telegram.UpdateState.t() | keyword()) ::
-          {:ok, binary()} | {:error, term()}
+          {:ok, Request.t()} | {:error, term()}
   def updates_get_difference(%MTProto.Telegram.UpdateState{} = state) do
     state
     |> MTProto.Telegram.UpdateState.to_difference_opts()
@@ -169,17 +211,21 @@ defmodule MTProto.Telegram.API do
         |> put_flag(2, not is_nil(qts_limit))
 
       {:ok,
-       [
-         <<@updates_get_difference::little-unsigned-32>>,
-         TL.encode_int(flags),
-         TL.encode_int(pts),
-         maybe_encode_int(pts_limit),
-         maybe_encode_int(pts_total_limit),
-         TL.encode_int(date),
-         TL.encode_int(qts),
-         maybe_encode_int(qts_limit)
-       ]
-       |> IO.iodata_to_binary()}
+       request(
+         [
+           <<@updates_get_difference::little-unsigned-32>>,
+           TL.encode_int(flags),
+           TL.encode_int(pts),
+           maybe_encode_int(pts_limit),
+           maybe_encode_int(pts_total_limit),
+           TL.encode_int(date),
+           TL.encode_int(qts),
+           maybe_encode_int(qts_limit)
+         ]
+         |> IO.iodata_to_binary(),
+         :updates_get_difference,
+         "updates.Difference"
+       )}
     end
   end
 
@@ -228,7 +274,7 @@ defmodule MTProto.Telegram.API do
   end
 
   @spec auth_send_code(binary(), binary(), keyword()) ::
-          {:ok, binary()} | {:error, term()}
+          {:ok, Request.t()} | {:error, term()}
   def auth_send_code(phone_number, api_hash, opts \\ []) do
     with {:ok, phone_number} <-
            validate_binary_arg(phone_number, :phone_number),
@@ -236,14 +282,19 @@ defmodule MTProto.Telegram.API do
          {:ok, api_hash} <- validate_binary_arg(api_hash, :api_hash),
          {:ok, settings} <- code_settings(Keyword.get(opts, :settings, [])) do
       {:ok,
-       <<@auth_send_code::little-unsigned-32,
-         TL.encode_bytes(phone_number)::binary, TL.encode_int(api_id)::binary,
-         TL.encode_bytes(api_hash)::binary, settings::binary>>}
+       request(
+         <<@auth_send_code::little-unsigned-32,
+           TL.encode_bytes(phone_number)::binary,
+           TL.encode_int(api_id)::binary, TL.encode_bytes(api_hash)::binary,
+           settings::binary>>,
+         :auth_send_code,
+         "auth.SentCode"
+       )}
     end
   end
 
   @spec auth_sign_in(binary(), binary(), binary(), keyword()) ::
-          {:ok, binary()} | {:error, term()}
+          {:ok, Request.t()} | {:error, term()}
   def auth_sign_in(phone_number, phone_code_hash, phone_code, opts \\ []) do
     with {:ok, phone_number} <-
            validate_binary_arg(phone_number, :phone_number),
@@ -254,16 +305,26 @@ defmodule MTProto.Telegram.API do
       flags = 1
 
       {:ok,
-       <<@auth_sign_in::little-unsigned-32, TL.encode_int(flags)::binary,
-         TL.encode_bytes(phone_number)::binary,
-         TL.encode_bytes(phone_code_hash)::binary,
-         TL.encode_bytes(phone_code)::binary>>}
+       request(
+         <<@auth_sign_in::little-unsigned-32, TL.encode_int(flags)::binary,
+           TL.encode_bytes(phone_number)::binary,
+           TL.encode_bytes(phone_code_hash)::binary,
+           TL.encode_bytes(phone_code)::binary>>,
+         :auth_sign_in,
+         "auth.Authorization"
+       )}
     end
   end
 
-  @spec wrap_request(binary(), keyword()) ::
+  @spec wrap_request(Request.t() | binary(), keyword()) ::
           {:ok, binary()} | {:error, term()}
-  def wrap_request(query, opts \\ []) do
+  def wrap_request(query_or_request, opts \\ [])
+
+  def wrap_request(%Request{query: query}, opts) do
+    wrap_request(query, opts)
+  end
+
+  def wrap_request(query, opts) do
     with {:ok, initialized_query} <- init_connection(query, opts),
          {:ok, wrapped_query} <- invoke_with_layer(initialized_query, opts) do
       {:ok, wrapped_query}
@@ -317,6 +378,10 @@ defmodule MTProto.Telegram.API do
 
   defp validate_query(query) when is_binary(query), do: {:ok, query}
   defp validate_query(_query), do: {:error, :invalid_query}
+
+  defp request(query, request, result_type) when is_binary(query) do
+    Request.new(query, request, result_type)
+  end
 
   defp input_user_self, do: <<@input_user_self::little-unsigned-32>>
   defp input_peer_empty, do: <<@input_peer_empty::little-unsigned-32>>

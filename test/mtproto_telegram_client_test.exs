@@ -60,7 +60,9 @@ defmodule MTProto.Telegram.ClientTest do
       padding_bytes: :binary.copy(<<0xAA>>, 64)
     ]
 
-    assert {:ok, request_id} = Client.get_config(client, opts)
+    request = API.help_get_config()
+
+    assert {:ok, request_id} = Client.request(client, request, opts)
     assert_receive {:fake_socket, :send, ^socket, <<0xEF>>}
     assert_receive {:fake_socket, :send, ^socket, request_packet}
 
@@ -134,7 +136,7 @@ defmodule MTProto.Telegram.ClientTest do
         send(parent, {:sync_client, self(), client})
 
         result =
-          Client.get_config_sync(client,
+          Client.request_sync(client, API.help_get_config(),
             api_id: 12345,
             device_model: "exmt-dev",
             system_version: "OTP test",
@@ -218,8 +220,11 @@ defmodule MTProto.Telegram.ClientTest do
       padding_bytes: :binary.copy(<<0xAA>>, 64)
     ]
 
+    assert {:ok, request} =
+             API.auth_send_code("+15551234567", "hash-123", opts)
+
     assert {:ok, request_id} =
-             Client.send_code(client, "+15551234567", "hash-123", opts)
+             Client.request(client, request, opts)
 
     assert_receive {:fake_socket, :send, ^socket, <<0xEF>>}
     assert_receive {:fake_socket, :send, ^socket, request_packet}
@@ -237,9 +242,7 @@ defmodule MTProto.Telegram.ClientTest do
                session_id: 123
              )
 
-    assert {:ok, query} = API.auth_send_code("+15551234567", "hash-123", opts)
-
-    assert {:ok, expected_body} = API.wrap_request(query, opts)
+    assert {:ok, expected_body} = API.wrap_request(request, opts)
     assert decoded_request_packet.body == expected_body
 
     response_body = sent_code_body("phone-code-hash", 6)

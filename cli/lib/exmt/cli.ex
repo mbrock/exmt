@@ -120,7 +120,7 @@ defmodule Exmt.CLI do
       exmt auth sign-in <phone-number> <phone-code-hash> <phone-code>
 
     commands:
-    #{Enum.map_join(command_summaries(commands), "\n", &("  " <> &1))}
+    #{Enum.map_join(command_paths(commands), "\n", &("  " <> &1))}
     """)
   end
 
@@ -130,39 +130,33 @@ defmodule Exmt.CLI do
       exmt #{Enum.join(prefix, " ")} <subcommand>
 
     commands:
-    #{Enum.map_join(command_summaries(commands), "\n", &("  " <> &1))}
+    #{Enum.map_join(command_paths(commands), "\n", &("  " <> &1))}
     """)
   end
 
-  defp command_summaries(commands) do
+  defp command_paths(commands) do
     Enum.map(commands, fn command_module ->
-      aliases =
-        case Enum.map(command_module.aliases(), &Enum.join(&1, " ")) do
-          [] -> ""
-          aliases -> " (" <> Enum.join(aliases, ", ") <> ")"
-        end
-
-      "#{Enum.join(command_module.command_path(), " ")}#{aliases}  #{command_module.summary()}"
+      Enum.join(command_module.command_path(), " ")
     end)
   end
 
   defp find_exact_command(path) do
-    Enum.find_value(command_entries(), :error, fn {command_path,
-                                                   command_module} ->
-      if command_path == path do
+    Enum.find_value(@commands, :error, fn command_module ->
+      if command_module.command_path() == path do
         {:ok, command_module}
       end
     end)
   end
 
   defp resolve_command(path) do
-    case Enum.filter(command_entries(), fn {command_path, _command_module} ->
-           prefix_path?(command_path, path)
+    case Enum.filter(@commands, fn command_module ->
+           prefix_path?(command_module.command_path(), path)
          end)
-         |> Enum.sort_by(fn {command_path, _command_module} ->
-           -length(command_path)
+         |> Enum.sort_by(fn command_module ->
+           -length(command_module.command_path())
          end) do
-      [{command_path, command_module} | _] ->
+      [command_module | _] ->
+        command_path = command_module.command_path()
         {:ok, command_module, Enum.drop(path, length(command_path))}
 
       [] ->
@@ -174,18 +168,8 @@ defmodule Exmt.CLI do
   end
 
   defp commands_with_prefix(prefix) do
-    @commands
-    |> Enum.filter(fn command_module ->
-      prefix_path?(prefix, command_module.command_path()) or
-        Enum.any?(command_module.aliases(), &prefix_path?(prefix, &1))
-    end)
-    |> Enum.uniq()
-  end
-
-  defp command_entries do
-    Enum.flat_map(@commands, fn command_module ->
-      [{command_module.command_path(), command_module}] ++
-        Enum.map(command_module.aliases(), &{&1, command_module})
+    Enum.filter(@commands, fn command_module ->
+      prefix_path?(prefix, command_module.command_path())
     end)
   end
 

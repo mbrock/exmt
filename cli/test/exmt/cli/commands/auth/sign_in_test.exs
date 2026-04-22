@@ -19,13 +19,11 @@ defmodule Exmt.CLI.Commands.Auth.SignInTest do
   test "requires phone number, phone code hash, and phone code" do
     io =
       capture_io(:stderr, fn ->
-        assert {:error,
-                {:missing_argument,
-                 "<phone-number> <phone-code-hash> <phone-code>"}} =
+        assert {:error, {:missing_argument, "<phone-code>"}} =
                  SignIn.run(["+15551234567", "hash"])
       end)
 
-    assert io =~ "<phone-number> <phone-code-hash> <phone-code>"
+    assert io =~ "<phone-code>"
     assert io =~ "exmt auth sign-in"
   end
 end

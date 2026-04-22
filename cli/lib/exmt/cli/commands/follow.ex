@@ -4,7 +4,7 @@ defmodule Exmt.CLI.Commands.Follow do
   @behaviour Exmt.CLI.Command
 
   alias Exmt.CLI.Telegram
-  alias MTProto.Telegram.{Client, UpdateState, Updates}
+  alias MTProto.Telegram.{API, Client, UpdateState, Updates}
   alias MTProto.TL.Runtime.Decoded
 
   @default_ping_interval 30_000
@@ -12,13 +12,6 @@ defmodule Exmt.CLI.Commands.Follow do
 
   @impl true
   def command_path, do: ["follow"]
-
-  @impl true
-  def aliases, do: [["f"]]
-
-  @impl true
-  def summary,
-    do: "Poll updates.getDifference and print live Telegram updates"
 
   @impl true
   def usage do
@@ -122,9 +115,10 @@ defmodule Exmt.CLI.Commands.Follow do
 
   defp fetch_update_state(client, context) do
     with {:ok, decoded} <-
-           Client.updates_get_state_sync(
+           Client.request_sync(
              client,
-             Telegram.request_opts(context, request: :updates_get_state)
+             API.updates_get_state(),
+             Telegram.request_opts(context)
            ),
          {:ok, update_state} <- UpdateState.from_decoded(decoded),
          :ok <- persist_update_state(context, update_state) do
@@ -211,11 +205,12 @@ defmodule Exmt.CLI.Commands.Follow do
   end
 
   defp poll_difference(client, context, loop_state) do
-    with {:ok, decoded} <-
-           Client.updates_get_difference_sync(
+    with {:ok, request} <- API.updates_get_difference(loop_state.update_state),
+         {:ok, decoded} <-
+           Client.request_sync(
              client,
-             loop_state.update_state,
-             Telegram.request_opts(context, request: :updates_get_difference)
+             request,
+             Telegram.request_opts(context)
            ),
          {:ok, next_loop_state} <-
            apply_difference(client, context, loop_state, decoded) do

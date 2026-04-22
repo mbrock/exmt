@@ -2,6 +2,7 @@ defmodule MTProto.Telegram.APITest do
   use ExUnit.Case, async: true
 
   alias MTProto.Telegram.API
+  alias MTProto.Telegram.Request
   alias MTProto.TL
 
   test "wraps help.getConfig in initConnection and invokeWithLayer" do
@@ -65,7 +66,12 @@ defmodule MTProto.Telegram.APITest do
   end
 
   test "builds auth.sendCode with nested codeSettings" do
-    assert {:ok, request} =
+    assert {:ok,
+            %Request{
+              query: request,
+              request: :auth_send_code,
+              result_type: "auth.SentCode"
+            }} =
              API.auth_send_code("+15551234567", "hash-123",
                api_id: 12345,
                settings: [allow_app_hash: true]
@@ -80,7 +86,12 @@ defmodule MTProto.Telegram.APITest do
   end
 
   test "builds auth.signIn with phone code" do
-    assert {:ok, request} =
+    assert {:ok,
+            %Request{
+              query: request,
+              request: :auth_sign_in,
+              result_type: "auth.Authorization"
+            }} =
              API.auth_sign_in("+15551234567", "code-hash", "12345")
 
     assert request ==
@@ -91,28 +102,56 @@ defmodule MTProto.Telegram.APITest do
   end
 
   test "builds users.getFullUser for the current user" do
-    assert API.users_get_self() ==
+    assert %Request{
+             query: request,
+             request: :users_get_self,
+             result_type: "users.UserFull"
+           } = API.users_get_self()
+
+    assert request ==
              <<0xB60F5918::little-unsigned-32,
                0xF7C1B13F::little-unsigned-32>>
   end
 
   test "builds updates.getState" do
-    assert API.updates_get_state() == <<0xEDD4882A::little-unsigned-32>>
+    assert %Request{
+             query: request,
+             request: :updates_get_state,
+             result_type: "updates.State"
+           } = API.updates_get_state()
+
+    assert request == <<0xEDD4882A::little-unsigned-32>>
   end
 
   test "builds help.getNearestDc" do
-    assert API.help_get_nearest_dc() == <<0x1FB33026::little-unsigned-32>>
+    assert %Request{
+             query: request,
+             request: :help_get_nearest_dc,
+             result_type: "NearestDc"
+           } = API.help_get_nearest_dc()
+
+    assert request == <<0x1FB33026::little-unsigned-32>>
   end
 
   test "builds contacts.getContacts" do
-    assert {:ok, request} = API.contacts_get_contacts(hash: 42)
+    assert {:ok,
+            %Request{
+              query: request,
+              request: :contacts_get_contacts,
+              result_type: "contacts.Contacts"
+            }} = API.contacts_get_contacts(hash: 42)
 
     assert request ==
              <<0x5DD69E12::little-unsigned-32, TL.encode_long(42)::binary>>
   end
 
   test "builds messages.getDialogs using inputPeerEmpty by default" do
-    assert {:ok, request} = API.messages_get_dialogs(limit: 25)
+    assert {:ok,
+            %Request{
+              query: request,
+              request: :messages_get_dialogs,
+              result_type: "messages.Dialogs"
+            }} = API.messages_get_dialogs(limit: 25)
 
     assert request ==
              <<0xA0F4CB4F::little-unsigned-32, TL.encode_int(0)::binary,
@@ -122,7 +161,12 @@ defmodule MTProto.Telegram.APITest do
   end
 
   test "builds messages.getHistory for inputPeerSelf by default" do
-    assert {:ok, request} = API.messages_get_history(limit: 10)
+    assert {:ok,
+            %Request{
+              query: request,
+              request: :messages_get_history,
+              result_type: "messages.Messages"
+            }} = API.messages_get_history(limit: 10)
 
     assert request ==
              <<0x4423E6C5::little-unsigned-32, 0x7DA07EC9::little-unsigned-32,
@@ -133,7 +177,12 @@ defmodule MTProto.Telegram.APITest do
   end
 
   test "builds messages.sendMessage for a self peer" do
-    assert {:ok, request} =
+    assert {:ok,
+            %Request{
+              query: request,
+              request: :messages_send_message,
+              result_type: "Updates"
+            }} =
              API.messages_send_message("hello",
                peer: :self,
                random_id: 123_456
@@ -155,7 +204,12 @@ defmodule MTProto.Telegram.APITest do
         seq: 44
       )
 
-    assert {:ok, request} = API.updates_get_difference(state)
+    assert {:ok,
+            %Request{
+              query: request,
+              request: :updates_get_difference,
+              result_type: "updates.Difference"
+            }} = API.updates_get_difference(state)
 
     assert request ==
              <<0x19C2F763::little-unsigned-32, TL.encode_int(0)::binary,

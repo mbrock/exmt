@@ -17,7 +17,7 @@ defmodule MTProto.Telegram.Client do
   use GenServer
 
   alias MTProto.Client, as: MTProtoClient
-  alias MTProto.Telegram.{API, Result}
+  alias MTProto.Telegram.{API, Request, Result}
 
   @telegram_client_opts [:name, :notify_to]
   @default_wait_timeout 30_000
@@ -82,6 +82,11 @@ defmodule MTProto.Telegram.Client do
     GenServer.call(server, :session_data)
   end
 
+  @spec session_id(GenServer.server()) :: integer() | nil
+  def session_id(server) do
+    GenServer.call(server, :session_id)
+  end
+
   @spec invoke(GenServer.server(), binary(), keyword()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def invoke(server, query, opts \\ []) do
@@ -120,250 +125,16 @@ defmodule MTProto.Telegram.Client do
     end
   end
 
-  @spec get_config(GenServer.server(), keyword()) ::
+  @spec request(GenServer.server(), Request.t(), keyword()) ::
           {:ok, non_neg_integer()} | {:error, term()}
-  def get_config(server, opts \\ []) do
-    invoke(
-      server,
-      API.help_get_config(),
-      opts
-      |> Keyword.put_new(:request, :help_get_config)
-      |> Keyword.put_new(:result_type, "Config")
-    )
+  def request(server, %Request{} = request, opts \\ []) do
+    invoke(server, request.query, apply_request_defaults(request, opts))
   end
 
-  @spec get_config_sync(GenServer.server(), keyword()) ::
+  @spec request_sync(GenServer.server(), Request.t(), keyword()) ::
           {:ok, term()} | {:error, term()}
-  def get_config_sync(server, opts \\ []) do
-    invoke_sync(
-      server,
-      API.help_get_config(),
-      opts
-      |> Keyword.put_new(:request, :help_get_config)
-      |> Keyword.put_new(:result_type, "Config")
-    )
-  end
-
-  @spec send_code(GenServer.server(), binary(), binary(), keyword()) ::
-          {:ok, non_neg_integer()} | {:error, term()}
-  def send_code(server, phone_number, api_hash, opts \\ []) do
-    GenServer.call(server, {:send_code, phone_number, api_hash, opts})
-  end
-
-  @spec send_code_sync(GenServer.server(), binary(), binary(), keyword()) ::
-          {:ok, term()} | {:error, term()}
-  def send_code_sync(server, phone_number, api_hash, opts \\ []) do
-    with {:ok, query} <- API.auth_send_code(phone_number, api_hash, opts) do
-      invoke_sync(
-        server,
-        query,
-        opts
-        |> Keyword.put_new(:request, :auth_send_code)
-        |> Keyword.put_new(:result_type, "auth.SentCode")
-      )
-    end
-  end
-
-  @spec sign_in(GenServer.server(), binary(), binary(), binary(), keyword()) ::
-          {:ok, non_neg_integer()} | {:error, term()}
-  def sign_in(server, phone_number, phone_code_hash, phone_code, opts \\ []) do
-    GenServer.call(
-      server,
-      {:sign_in, phone_number, phone_code_hash, phone_code, opts}
-    )
-  end
-
-  @spec sign_in_sync(
-          GenServer.server(),
-          binary(),
-          binary(),
-          binary(),
-          keyword()
-        ) :: {:ok, term()} | {:error, term()}
-  def sign_in_sync(
-        server,
-        phone_number,
-        phone_code_hash,
-        phone_code,
-        opts \\ []
-      ) do
-    with {:ok, query} <-
-           API.auth_sign_in(
-             phone_number,
-             phone_code_hash,
-             phone_code,
-             opts
-           ) do
-      invoke_sync(
-        server,
-        query,
-        opts
-        |> Keyword.put_new(:request, :auth_sign_in)
-        |> Keyword.put_new(:result_type, "auth.Authorization")
-      )
-    end
-  end
-
-  @spec whoami(GenServer.server(), keyword()) ::
-          {:ok, non_neg_integer()} | {:error, term()}
-  def whoami(server, opts \\ []) do
-    invoke(
-      server,
-      API.users_get_self(),
-      opts
-      |> Keyword.put_new(:request, :users_get_self)
-      |> Keyword.put_new(:result_type, "users.UserFull")
-    )
-  end
-
-  @spec whoami_sync(GenServer.server(), keyword()) ::
-          {:ok, term()} | {:error, term()}
-  def whoami_sync(server, opts \\ []) do
-    invoke_sync(
-      server,
-      API.users_get_self(),
-      opts
-      |> Keyword.put_new(:request, :users_get_self)
-      |> Keyword.put_new(:result_type, "users.UserFull")
-    )
-  end
-
-  @spec updates_get_state(GenServer.server(), keyword()) ::
-          {:ok, non_neg_integer()} | {:error, term()}
-  def updates_get_state(server, opts \\ []) do
-    invoke(
-      server,
-      API.updates_get_state(),
-      opts
-      |> Keyword.put_new(:request, :updates_get_state)
-      |> Keyword.put_new(:result_type, "updates.State")
-    )
-  end
-
-  @spec updates_get_state_sync(GenServer.server(), keyword()) ::
-          {:ok, term()} | {:error, term()}
-  def updates_get_state_sync(server, opts \\ []) do
-    invoke_sync(
-      server,
-      API.updates_get_state(),
-      opts
-      |> Keyword.put_new(:request, :updates_get_state)
-      |> Keyword.put_new(:result_type, "updates.State")
-    )
-  end
-
-  @spec updates_get_difference(
-          GenServer.server(),
-          MTProto.Telegram.UpdateState.t() | keyword(),
-          keyword()
-        ) :: {:ok, non_neg_integer()} | {:error, term()}
-  def updates_get_difference(server, state_or_opts, opts \\ []) do
-    with {:ok, query} <- API.updates_get_difference(state_or_opts) do
-      invoke(
-        server,
-        query,
-        opts
-        |> Keyword.put_new(:request, :updates_get_difference)
-        |> Keyword.put_new(:result_type, "updates.Difference")
-      )
-    end
-  end
-
-  @spec updates_get_difference_sync(
-          GenServer.server(),
-          MTProto.Telegram.UpdateState.t() | keyword(),
-          keyword()
-        ) :: {:ok, term()} | {:error, term()}
-  def updates_get_difference_sync(server, state_or_opts, opts \\ []) do
-    with {:ok, query} <- API.updates_get_difference(state_or_opts) do
-      invoke_sync(
-        server,
-        query,
-        opts
-        |> Keyword.put_new(:request, :updates_get_difference)
-        |> Keyword.put_new(:result_type, "updates.Difference")
-      )
-    end
-  end
-
-  @spec help_get_nearest_dc(GenServer.server(), keyword()) ::
-          {:ok, non_neg_integer()} | {:error, term()}
-  def help_get_nearest_dc(server, opts \\ []) do
-    invoke(
-      server,
-      API.help_get_nearest_dc(),
-      opts
-      |> Keyword.put_new(:request, :help_get_nearest_dc)
-      |> Keyword.put_new(:result_type, "NearestDc")
-    )
-  end
-
-  @spec help_get_nearest_dc_sync(GenServer.server(), keyword()) ::
-          {:ok, term()} | {:error, term()}
-  def help_get_nearest_dc_sync(server, opts \\ []) do
-    invoke_sync(
-      server,
-      API.help_get_nearest_dc(),
-      opts
-      |> Keyword.put_new(:request, :help_get_nearest_dc)
-      |> Keyword.put_new(:result_type, "NearestDc")
-    )
-  end
-
-  @spec contacts_get_contacts_sync(GenServer.server(), keyword()) ::
-          {:ok, term()} | {:error, term()}
-  def contacts_get_contacts_sync(server, opts \\ []) do
-    with {:ok, query} <- API.contacts_get_contacts(opts) do
-      invoke_sync(
-        server,
-        query,
-        opts
-        |> Keyword.put_new(:request, :contacts_get_contacts)
-        |> Keyword.put_new(:result_type, "contacts.Contacts")
-      )
-    end
-  end
-
-  @spec messages_get_dialogs_sync(GenServer.server(), keyword()) ::
-          {:ok, term()} | {:error, term()}
-  def messages_get_dialogs_sync(server, opts \\ []) do
-    with {:ok, query} <- API.messages_get_dialogs(opts) do
-      invoke_sync(
-        server,
-        query,
-        opts
-        |> Keyword.put_new(:request, :messages_get_dialogs)
-        |> Keyword.put_new(:result_type, "messages.Dialogs")
-      )
-    end
-  end
-
-  @spec messages_get_history_sync(GenServer.server(), keyword()) ::
-          {:ok, term()} | {:error, term()}
-  def messages_get_history_sync(server, opts) when is_list(opts) do
-    with {:ok, query} <- API.messages_get_history(opts) do
-      invoke_sync(
-        server,
-        query,
-        opts
-        |> Keyword.put_new(:request, :messages_get_history)
-        |> Keyword.put_new(:result_type, "messages.Messages")
-      )
-    end
-  end
-
-  @spec messages_send_message_sync(GenServer.server(), binary(), keyword()) ::
-          {:ok, term()} | {:error, term()}
-  def messages_send_message_sync(server, message, opts \\ []) do
-    with {:ok, query} <- API.messages_send_message(message, opts) do
-      invoke_sync(
-        server,
-        query,
-        opts
-        |> Keyword.put_new(:request, :messages_send_message)
-        |> Keyword.put_new(:result_type, "Updates")
-      )
-    end
+  def request_sync(server, %Request{} = request, opts \\ []) do
+    invoke_sync(server, request.query, apply_request_defaults(request, opts))
   end
 
   @impl true
@@ -413,44 +184,12 @@ defmodule MTProto.Telegram.Client do
     {:reply, MTProtoClient.session_data(state.mtproto_client), state}
   end
 
+  def handle_call(:session_id, _from, state) do
+    {:reply, state.session_id, state}
+  end
+
   def handle_call({:invoke, query, opts}, _from, state) do
     invoke_telegram_query(state, query, opts)
-  end
-
-  def handle_call({:send_code, phone_number, api_hash, opts}, _from, state) do
-    opts =
-      opts
-      |> Keyword.put_new(:request, :auth_send_code)
-      |> Keyword.put_new(:result_type, "auth.SentCode")
-
-    with {:ok, query} <- API.auth_send_code(phone_number, api_hash, opts) do
-      invoke_telegram_query(state, query, opts)
-    else
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
-  end
-
-  def handle_call(
-        {:sign_in, phone_number, phone_code_hash, phone_code, opts},
-        _from,
-        state
-      ) do
-    opts =
-      opts
-      |> Keyword.put_new(:request, :auth_sign_in)
-      |> Keyword.put_new(:result_type, "auth.Authorization")
-
-    with {:ok, query} <-
-           API.auth_sign_in(
-             phone_number,
-             phone_code_hash,
-             phone_code,
-             opts
-           ) do
-      invoke_telegram_query(state, query, opts)
-    else
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
   end
 
   @impl true
@@ -556,6 +295,13 @@ defmodule MTProto.Telegram.Client do
       {:ok, result_type} -> result_type
       {:error, _reason} -> nil
     end
+  end
+
+  defp apply_request_defaults(%Request{} = request, opts)
+       when is_list(opts) do
+    opts
+    |> Keyword.put_new(:request, request.request)
+    |> Keyword.put_new(:result_type, request.result_type)
   end
 
   defp invoke_telegram_query(state, query, opts) do
