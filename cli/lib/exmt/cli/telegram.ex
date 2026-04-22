@@ -106,11 +106,29 @@ defmodule Exmt.CLI.Telegram do
   @spec try_endpoints(
           context(),
           (pid(), map() ->
-             {:ok, term()} | {:error, term()})
+             {:ok, term()} | {:error, term()}),
+          keyword()
         ) ::
           {:ok, term()} | {:error, term()}
-  def try_endpoints(context, fun) when is_function(fun, 2) do
-    do_try_endpoints(context.endpoints, context, fun, [])
+  def try_endpoints(context, fun, opts \\ []) when is_function(fun, 2) do
+    do_try_endpoints(context.endpoints, context, fun, [], process_opts(opts))
+  end
+
+  @spec connection_opts(context(), map()) :: keyword()
+  def connection_opts(context, endpoint) do
+    [
+      host: endpoint.host,
+      port: endpoint.port,
+      public_keys: TelegramKeys.main_keys!(),
+      notify_to: self(),
+      pq_inner_data_mode: :dc,
+      dc_id: endpoint.dc_id,
+      session_store: {FileStore, context.session_file},
+      load_session_data: false
+    ]
+    |> maybe_put_session_data(
+      session_data_for_endpoint(endpoint, context.stored_session_data)
+    )
   end
 
   @spec connect(pid(), context()) :: {:ok, integer()} | {:error, term()}
@@ -273,16 +291,17 @@ defmodule Exmt.CLI.Telegram do
     end
   end
 
-  defp do_try_endpoints([], _context, _fun, []), do: {:error, :no_endpoints}
+  defp do_try_endpoints([], _context, _fun, [], _process_opts),
+    do: {:error, :no_endpoints}
 
-  defp do_try_endpoints([], _context, _fun, errors) do
+  defp do_try_endpoints([], _context, _fun, errors, _process_opts) do
     {:error, {:all_endpoints_failed, Enum.reverse(errors)}}
   end
 
-  defp do_try_endpoints([endpoint | rest], context, fun, errors) do
+  defp do_try_endpoints([endpoint | rest], context, fun, errors, process_opts) do
     IO.puts("Trying #{format_endpoint(endpoint)}")
 
-    case with_client(context, endpoint, fn client ->
+    case with_process(context, endpoint, process_opts, fn client ->
            fun.(client, endpoint)
          end) do
       {:ok, result} ->
@@ -298,7 +317,13 @@ defmodule Exmt.CLI.Telegram do
 
         case retry_step(reason, endpoint, rest, context) do
           {:continue, next_endpoints} ->
-            do_try_endpoints(next_endpoints, context, fun, errors)
+            do_try_endpoints(
+              next_endpoints,
+              context,
+              fun,
+              errors,
+              process_opts
+            )
 
           {:halt, reason} ->
             {:error, reason}
@@ -414,16 +439,26 @@ defmodule Exmt.CLI.Telegram do
     end
   end
 
-  defp with_client(context, endpoint, fun) do
-    context
-    |> client_opts(endpoint)
-    |> TelegramClient.start_link()
+  defp process_opts(opts) do
+    %{
+      start_fun: Keyword.get(opts, :start, &start_client/2),
+      stop_fun: Keyword.get(opts, :stop, &stop_client/1)
+    }
+  end
+
+  defp with_process(
+         context,
+         endpoint,
+         %{start_fun: start_fun, stop_fun: stop_fun},
+         fun
+       ) do
+    start_fun.(context, endpoint)
     |> case do
       {:ok, client} ->
         try do
           fun.(client)
         after
-          stop_client(client)
+          stop_fun.(client)
         end
 
       {:error, reason} ->
@@ -431,20 +466,10 @@ defmodule Exmt.CLI.Telegram do
     end
   end
 
-  defp client_opts(context, endpoint) do
-    [
-      host: endpoint.host,
-      port: endpoint.port,
-      public_keys: TelegramKeys.main_keys!(),
-      notify_to: self(),
-      pq_inner_data_mode: :dc,
-      dc_id: endpoint.dc_id,
-      session_store: {FileStore, context.session_file},
-      load_session_data: false
-    ]
-    |> maybe_put_session_data(
-      session_data_for_endpoint(endpoint, context.stored_session_data)
-    )
+  defp start_client(context, endpoint) do
+    context
+    |> connection_opts(endpoint)
+    |> TelegramClient.start_link()
   end
 
   defp session_data_for_endpoint(

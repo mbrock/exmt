@@ -227,6 +227,16 @@ defmodule MTProto.Telegram.Client do
 
   def handle_info(
         {:mtproto, mtproto_client,
+         {:unhandled_session_message, message_id, seq_no, body} = event},
+        %__MODULE__{mtproto_client: mtproto_client} = state
+      ) do
+    notify_mtproto(state, event)
+    maybe_notify_updates_message(state, message_id, seq_no, body)
+    {:noreply, state}
+  end
+
+  def handle_info(
+        {:mtproto, mtproto_client,
          {:rpc_request_result, request_id, request, result} = event},
         %__MODULE__{mtproto_client: mtproto_client} = state
       ) do
@@ -427,6 +437,21 @@ defmodule MTProto.Telegram.Client do
 
             next_state
         end
+    end
+  end
+
+  defp maybe_notify_updates_message(
+         %__MODULE__{} = state,
+         message_id,
+         seq_no,
+         body
+       ) do
+    case Result.decode(body, type: "Updates") do
+      {:ok, decoded} ->
+        notify_telegram(state, {:updates, message_id, seq_no, decoded})
+
+      {:error, _reason} ->
+        :ok
     end
   end
 

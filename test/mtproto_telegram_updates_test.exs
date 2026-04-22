@@ -76,4 +76,63 @@ defmodule MTProto.Telegram.UpdatesTest do
     assert {:reset, %UpdateState{pts: 99, qts: 2, date: 3, seq: 4}} =
              Updates.apply_difference(current_state, decoded)
   end
+
+  test "applies updateShortMessage and advances pts/date" do
+    current_state = UpdateState.new!(pts: 1, qts: 2, date: 3, seq: 4)
+
+    decoded = %Decoded{
+      tl_name: "updateShortMessage",
+      fields: %{
+        id: 10,
+        user_id: 42,
+        message: "hello",
+        pts: 11,
+        pts_count: 1,
+        date: 33
+      }
+    }
+
+    assert {:ok, result} = Updates.apply_pushed(current_state, decoded)
+
+    assert result.top_level == decoded
+    assert result.items == [{:update, decoded}]
+    assert result.context == %{users: [], chats: []}
+
+    assert result.state ==
+             UpdateState.new!(pts: 11, qts: 2, date: 33, seq: 4)
+  end
+
+  test "reconciles when updatesCombined starts after the current seq" do
+    current_state = UpdateState.new!(pts: 1, qts: 2, date: 3, seq: 4)
+
+    decoded = %Decoded{
+      tl_name: "updatesCombined",
+      fields: %{
+        updates: [],
+        users: [],
+        chats: [],
+        date: 5,
+        seq_start: 7,
+        seq: 8
+      }
+    }
+
+    assert {:reconcile, ^current_state} =
+             Updates.apply_pushed(current_state, decoded)
+  end
+
+  test "reconciles when updateShort wraps updatePtsChanged" do
+    current_state = UpdateState.new!(pts: 1, qts: 2, date: 3, seq: 4)
+
+    decoded = %Decoded{
+      tl_name: "updateShort",
+      fields: %{
+        update: %Decoded{tl_name: "updatePtsChanged", fields: %{}},
+        date: 33
+      }
+    }
+
+    assert {:reconcile, ^current_state} =
+             Updates.apply_pushed(current_state, decoded)
+  end
 end
