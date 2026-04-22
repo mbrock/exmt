@@ -1,9 +1,8 @@
-defmodule MTProto.ConnectionTest do
+defmodule MTProto.Auth.TCPConnectionTest do
   use ExUnit.Case, async: true
 
-  alias MTProto.Auth.PublicKey
-  alias MTProto.{Connection, PlainMessage}
-  alias MTProto.Transport.Abridged
+  alias MTProto.Auth.{PublicKey, TCPConnection}
+  alias MTProto.{PlainMessage, Transport.Abridged}
 
   defmodule FakeSocket do
     @behaviour MTProto.Socket
@@ -38,11 +37,11 @@ defmodule MTProto.ConnectionTest do
     end
   end
 
-  test "connection drives the full auth handshake over framed TCP messages" do
+  test "TCP connection drives the full auth handshake over framed TCP messages" do
     {:ok, key} = PublicKey.from_pem(MTProto.TelegramKeys.sample_pem())
 
     {:ok, connection} =
-      Connection.start_link(
+      TCPConnection.start_link(
         host: ~c"149.154.167.40",
         port: 443,
         public_keys: [key],
@@ -63,12 +62,11 @@ defmodule MTProto.ConnectionTest do
     assert_receive {:fake_socket, :setopts, ^socket, [active: :once]}
 
     assert :ok =
-             Connection.begin_auth_key_exchange(connection,
+             TCPConnection.begin_auth_key_exchange(connection,
                nonce: MTProto.AuthExchangeSample.step1_nonce()
              )
 
     assert_receive {:fake_socket, :send, ^socket, <<0xEF>>}
-
     assert_receive {:fake_socket, :send, ^socket, initial_packet}
     assert_receive {:mtproto, ^connection, {:request_sent, :req_pq_multi}}
 
