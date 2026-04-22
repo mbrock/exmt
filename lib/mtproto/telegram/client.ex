@@ -228,6 +228,64 @@ defmodule MTProto.Telegram.Client do
     )
   end
 
+  @spec updates_get_state(GenServer.server(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def updates_get_state(server, opts \\ []) do
+    invoke(
+      server,
+      API.updates_get_state(),
+      opts
+      |> Keyword.put_new(:request, :updates_get_state)
+      |> Keyword.put_new(:result_type, "updates.State")
+    )
+  end
+
+  @spec updates_get_state_sync(GenServer.server(), keyword()) ::
+          {:ok, term()} | {:error, term()}
+  def updates_get_state_sync(server, opts \\ []) do
+    invoke_sync(
+      server,
+      API.updates_get_state(),
+      opts
+      |> Keyword.put_new(:request, :updates_get_state)
+      |> Keyword.put_new(:result_type, "updates.State")
+    )
+  end
+
+  @spec updates_get_difference(
+          GenServer.server(),
+          MTProto.Telegram.UpdateState.t() | keyword(),
+          keyword()
+        ) :: {:ok, non_neg_integer()} | {:error, term()}
+  def updates_get_difference(server, state_or_opts, opts \\ []) do
+    with {:ok, query} <- API.updates_get_difference(state_or_opts) do
+      invoke(
+        server,
+        query,
+        opts
+        |> Keyword.put_new(:request, :updates_get_difference)
+        |> Keyword.put_new(:result_type, "updates.Difference")
+      )
+    end
+  end
+
+  @spec updates_get_difference_sync(
+          GenServer.server(),
+          MTProto.Telegram.UpdateState.t() | keyword(),
+          keyword()
+        ) :: {:ok, term()} | {:error, term()}
+  def updates_get_difference_sync(server, state_or_opts, opts \\ []) do
+    with {:ok, query} <- API.updates_get_difference(state_or_opts) do
+      invoke_sync(
+        server,
+        query,
+        opts
+        |> Keyword.put_new(:request, :updates_get_difference)
+        |> Keyword.put_new(:result_type, "updates.Difference")
+      )
+    end
+  end
+
   @impl true
   def init(opts) do
     Process.flag(:trap_exit, true)

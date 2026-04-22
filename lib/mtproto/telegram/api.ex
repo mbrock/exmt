@@ -18,6 +18,7 @@ defmodule MTProto.Telegram.API do
   @input_user_self 0xF7C1B13F
   @users_get_full_user 0xB60F5918
   @updates_get_state 0xEDD4882A
+  @updates_get_difference 0x19C2F763
 
   @default_layer 214
   @default_device_model "exmt"
@@ -38,6 +39,43 @@ defmodule MTProto.Telegram.API do
 
   @spec updates_get_state() :: binary()
   def updates_get_state, do: <<@updates_get_state::little-unsigned-32>>
+
+  @spec updates_get_difference(MTProto.Telegram.UpdateState.t() | keyword()) ::
+          {:ok, binary()} | {:error, term()}
+  def updates_get_difference(%MTProto.Telegram.UpdateState{} = state) do
+    state
+    |> MTProto.Telegram.UpdateState.to_difference_opts()
+    |> updates_get_difference()
+  end
+
+  def updates_get_difference(opts) when is_list(opts) do
+    with {:ok, pts} <- fetch_integer_opt(opts, :pts),
+         {:ok, pts_limit} <- fetch_optional_integer_opt(opts, :pts_limit),
+         {:ok, pts_total_limit} <-
+           fetch_optional_integer_opt(opts, :pts_total_limit),
+         {:ok, date} <- fetch_integer_opt(opts, :date),
+         {:ok, qts} <- fetch_integer_opt(opts, :qts),
+         {:ok, qts_limit} <- fetch_optional_integer_opt(opts, :qts_limit) do
+      flags =
+        0
+        |> put_flag(0, not is_nil(pts_total_limit))
+        |> put_flag(1, not is_nil(pts_limit))
+        |> put_flag(2, not is_nil(qts_limit))
+
+      {:ok,
+       [
+         <<@updates_get_difference::little-unsigned-32>>,
+         TL.encode_int(flags),
+         TL.encode_int(pts),
+         maybe_encode_int(pts_limit),
+         maybe_encode_int(pts_total_limit),
+         TL.encode_int(date),
+         TL.encode_int(qts),
+         maybe_encode_int(qts_limit)
+       ]
+       |> IO.iodata_to_binary()}
+    end
+  end
 
   @spec code_settings(keyword()) :: {:ok, binary()} | {:error, term()}
   def code_settings(opts \\ []) when is_list(opts) do
@@ -202,6 +240,15 @@ defmodule MTProto.Telegram.API do
     end
   end
 
+  defp fetch_optional_integer_opt(opts, key) do
+    case Keyword.fetch(opts, key) do
+      {:ok, value} when is_integer(value) -> {:ok, value}
+      {:ok, nil} -> {:ok, nil}
+      {:ok, _value} -> {:error, {:invalid_option, key}}
+      :error -> {:ok, nil}
+    end
+  end
+
   defp fetch_optional_binary_opt(opts, key) do
     case Keyword.fetch(opts, key) do
       {:ok, value} when is_binary(value) -> {:ok, value}
@@ -271,6 +318,11 @@ defmodule MTProto.Telegram.API do
   defp maybe_encode_token(token, app_sandbox) do
     [TL.encode_bytes(token), TL.encode_bool(app_sandbox || false)]
   end
+
+  defp maybe_encode_int(nil), do: []
+
+  defp maybe_encode_int(value) when is_integer(value),
+    do: TL.encode_int(value)
 
   defp put_flag(flags, _bit, false), do: flags
   defp put_flag(flags, bit, true), do: Bitwise.bor(flags, Bitwise.bsl(1, bit))

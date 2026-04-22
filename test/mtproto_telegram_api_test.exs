@@ -100,4 +100,21 @@ defmodule MTProto.Telegram.APITest do
   test "builds updates.getState" do
     assert API.updates_get_state() == <<0xEDD4882A::little-unsigned-32>>
   end
+
+  test "builds updates.getDifference from update state" do
+    state =
+      MTProto.Telegram.UpdateState.new!(
+        pts: 11,
+        qts: 22,
+        date: 33,
+        seq: 44
+      )
+
+    assert {:ok, request} = API.updates_get_difference(state)
+
+    assert request ==
+             <<0x19C2F763::little-unsigned-32, TL.encode_int(0)::binary,
+               TL.encode_int(11)::binary, TL.encode_int(33)::binary,
+               TL.encode_int(22)::binary>>
+  end
 end

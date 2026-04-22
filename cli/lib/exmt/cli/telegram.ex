@@ -3,9 +3,10 @@ defmodule Exmt.CLI.Telegram do
 
   alias MTProto.{SessionData, TelegramKeys}
   alias MTProto.SessionStore.File, as: FileStore
-  alias MTProto.Telegram.API
+  alias MTProto.Telegram.{API, UpdateState}
   alias MTProto.Telegram.Client, as: TelegramClient
   alias MTProto.Telegram.RPCError
+  alias MTProto.Telegram.UpdateStateStore.File, as: UpdateStateFileStore
 
   @default_timeout 30_000
   @default_session_file ".exmt/session.term"
@@ -133,6 +134,32 @@ defmodule Exmt.CLI.Telegram do
     Keyword.get(opts, :timeout, @default_timeout)
   end
 
+  @spec update_state_file(context() | binary()) :: binary()
+  def update_state_file(%{session_file: session_file}) do
+    update_state_file(session_file)
+  end
+
+  def update_state_file(session_file) when is_binary(session_file) do
+    ext = Path.extname(session_file)
+
+    case ext do
+      "" -> session_file <> ".updates"
+      _ -> Path.rootname(session_file, ext) <> ".updates" <> ext
+    end
+  end
+
+  @spec load_update_state(context()) ::
+          {:ok, UpdateState.t() | nil} | {:error, term()}
+  def load_update_state(context) do
+    UpdateStateFileStore.load(update_state_file(context))
+  end
+
+  @spec save_update_state(context(), UpdateState.t()) ::
+          :ok | {:error, term()}
+  def save_update_state(context, %UpdateState{} = update_state) do
+    UpdateStateFileStore.save(update_state_file(context), update_state)
+  end
+
   @spec format_endpoint(map()) :: binary()
   def format_endpoint(endpoint) do
     "#{List.to_string(endpoint.host)}:#{endpoint.port} (dc #{endpoint.dc_id})"
@@ -172,6 +199,13 @@ defmodule Exmt.CLI.Telegram do
     do: "timed out waiting for session setup"
 
   def format_error(:rpc_timeout), do: "timed out waiting for rpc_result"
+
+  def format_error({:update_state_store_load_failed, reason}),
+    do: "update state load failed: #{inspect(reason)}"
+
+  def format_error({:update_state_store_save_failed, reason}),
+    do: "update state save failed: #{inspect(reason)}"
+
   def format_error(%RPCError{} = error), do: Exception.message(error)
   def format_error(reason), do: inspect(reason)
 
