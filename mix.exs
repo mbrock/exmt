@@ -14,6 +14,14 @@ defmodule Exmt.MixProject do
     ]
   end
 
+  # Elixir 1.15+ reads preferred envs from cli/0; older versions fall back to
+  # :preferred_cli_env in project/0 above.
+  def cli do
+    [
+      preferred_envs: [precommit: :test]
+    ]
+  end
+
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
