@@ -19,13 +19,13 @@ defmodule MTProto.AuthKeyTest do
 
     assert {:ok,
             <<194, 206, 210, 179, 62, 89, 58, 85, 210, 127, 74, 93, 171, 238,
-              124,
-              103>>} = AuthKey.calc_new_nonce_hash(auth_key, new_nonce, 1)
+              124, 103>>} =
+             AuthKey.calc_new_nonce_hash(auth_key, new_nonce, 1)
 
     assert {:ok,
             <<244, 49, 142, 133, 189, 47, 243, 190, 132, 217, 254, 252, 227,
-              220, 227,
-              159>>} = AuthKey.calc_new_nonce_hash(auth_key, new_nonce, 2)
+              220, 227, 159>>} =
+             AuthKey.calc_new_nonce_hash(auth_key, new_nonce, 2)
 
     assert {:ok,
             <<75, 249, 215, 179, 125, 180, 19, 238, 67, 29, 40, 81, 118, 49,

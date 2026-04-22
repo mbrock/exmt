@@ -40,8 +40,8 @@ defmodule MTProto.TCPConnection do
           dc_id: integer(),
           pq_inner_data_mode: :bare | :dc,
           random_bytes_chunks: [binary()],
-          now_ns_fun: (() -> non_neg_integer()),
-          now_sec_fun: (() -> integer())
+          now_ns_fun: (-> non_neg_integer()),
+          now_sec_fun: (-> integer())
         }
 
   defstruct [

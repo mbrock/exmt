@@ -48,7 +48,7 @@ defmodule Exmt.CLI.Telegram do
     ]
   end
 
-  @spec run_command((() -> :ok | {:error, term()})) :: :ok | {:error, term()}
+  @spec run_command((-> :ok | {:error, term()})) :: :ok | {:error, term()}
   def run_command(fun) when is_function(fun, 0) do
     previous_trap_exit = Process.flag(:trap_exit, true)
 

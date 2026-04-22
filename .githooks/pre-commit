@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+mix format
+(cd cli && mix format)
+
+if ! git diff --quiet -- . ':(exclude)cli'; then
+  printf '%s\n' "Formatting changed files in the root app. Review and stage them, then commit again." >&2
+  exit 1
+fi
+
+if ! git -C cli diff --quiet -- .; then
+  printf '%s\n' "Formatting changed files in cli/. Review and stage them, then commit again." >&2
+  exit 1
+fi
