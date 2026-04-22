@@ -3,5 +3,10 @@ defmodule Exmt.CLI.Commands.Whoami do
 
   use Exmt.CLI.Command,
     path: ["whoami"],
-    builder: :users_get_self
+    builder: {MTProto.Telegram.API.Users, :getFullUser},
+    prepare: :prepare_request
+
+  def prepare_request(_opts, _args) do
+    {:ok, %{request_opts: [id: :self]}}
+  end
 end

@@ -146,17 +146,18 @@ defmodule Exmt.CLI.Command do
   end
 
   defp invoke(client, endpoint, context, parsed, config) do
-    request_opts =
+    request_params =
       parsed.assigns
       |> Map.get(:request_opts, [])
-      |> then(&Telegram.request_opts(context, &1))
+      |> Keyword.merge(
+        resolve_call_args(config.call_args, parsed.assigns, context)
+      )
 
-    builder_args =
-      resolve_call_args(config.call_args, parsed.assigns, context)
+    exec_opts = Telegram.request_opts(context)
 
     with {:ok, request} <-
-           build_request(config.builder, builder_args, request_opts),
-         {:ok, decoded} <- Client.request_sync(client, request, request_opts),
+           build_request(config.builder, request_params),
+         {:ok, decoded} <- Client.request_sync(client, request, exec_opts),
          session_id <- Client.session_id(client) do
       {:ok, %{endpoint: endpoint, session_id: session_id, decoded: decoded}}
     end
@@ -164,21 +165,20 @@ defmodule Exmt.CLI.Command do
 
   defp resolve_call_args(call_args, assigns, context) do
     Enum.map(call_args, fn
-      {:context, key} -> Map.fetch!(context, key)
-      key when is_atom(key) -> Map.fetch!(assigns, key)
+      {:context, key} -> {key, Map.fetch!(context, key)}
+      key when is_atom(key) -> {key, Map.fetch!(assigns, key)}
     end)
   end
 
-  defp build_request(builder, args, request_opts) do
-    case apply(API, builder, args ++ [request_opts]) do
-      %Request{} = request ->
-        {:ok, request}
+  defp build_request({module, function}, request_params) do
+    {:ok, apply(module, function, [request_params])}
+  end
 
-      {:ok, %Request{} = request} ->
-        {:ok, request}
-
-      {:error, reason} ->
-        {:error, reason}
+  defp build_request(builder, request_params) when is_atom(builder) do
+    case apply(API, builder, [request_params]) do
+      %Request{} = request -> {:ok, request}
+      {:ok, %Request{} = request} -> {:ok, request}
+      {:error, reason} -> {:error, reason}
     end
   end
 

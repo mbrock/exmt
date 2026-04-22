@@ -4,6 +4,6 @@ defmodule Exmt.CLI.Commands.Auth.SignIn do
   use Exmt.CLI.Command,
     path: ["auth", "sign-in"],
     positionals: [:phone_number, :phone_code_hash, :phone_code],
-    builder: :auth_sign_in,
+    builder: {MTProto.Telegram.API.Auth, :signIn},
     call_args: [:phone_number, :phone_code_hash, :phone_code]
 end

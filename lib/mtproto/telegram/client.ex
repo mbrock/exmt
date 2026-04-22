@@ -125,16 +125,30 @@ defmodule MTProto.Telegram.Client do
     end
   end
 
-  @spec request(GenServer.server(), Request.t(), keyword()) ::
+  @type requestish :: Request.t() | {binary(), keyword()}
+
+  @spec request(GenServer.server(), requestish(), keyword()) ::
           {:ok, non_neg_integer()} | {:error, term()}
-  def request(server, %Request{} = request, opts \\ []) do
-    invoke(server, request.query, apply_request_defaults(request, opts))
+  def request(server, request, opts \\ []) do
+    with {:ok, compiled_request} <- API.compile_request(request, opts) do
+      invoke(
+        server,
+        compiled_request.query,
+        apply_request_defaults(compiled_request, opts)
+      )
+    end
   end
 
-  @spec request_sync(GenServer.server(), Request.t(), keyword()) ::
+  @spec request_sync(GenServer.server(), requestish(), keyword()) ::
           {:ok, term()} | {:error, term()}
-  def request_sync(server, %Request{} = request, opts \\ []) do
-    invoke_sync(server, request.query, apply_request_defaults(request, opts))
+  def request_sync(server, request, opts \\ []) do
+    with {:ok, compiled_request} <- API.compile_request(request, opts) do
+      invoke_sync(
+        server,
+        compiled_request.query,
+        apply_request_defaults(compiled_request, opts)
+      )
+    end
   end
 
   @impl true

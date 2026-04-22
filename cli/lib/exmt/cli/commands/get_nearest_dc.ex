@@ -3,5 +3,5 @@ defmodule Exmt.CLI.Commands.GetNearestDC do
 
   use Exmt.CLI.Command,
     path: ["get-nearest-dc"],
-    builder: :help_get_nearest_dc
+    builder: {MTProto.Telegram.API.Help, :getNearestDc}
 end

@@ -5,6 +5,6 @@ defmodule Exmt.CLI.Commands.Auth.SendCode do
     path: ["auth", "send-code"],
     positionals: [:phone_number],
     require: [:api_id, :api_hash],
-    builder: :auth_send_code,
+    builder: {MTProto.Telegram.API.Auth, :sendCode},
     call_args: [:phone_number, {:context, :api_hash}]
 end

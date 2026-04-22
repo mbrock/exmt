@@ -3,5 +3,5 @@ defmodule Exmt.CLI.Commands.GetConfig do
 
   use Exmt.CLI.Command,
     path: ["get-config"],
-    builder: :help_get_config
+    builder: {MTProto.Telegram.API.Help, :getConfig}
 end

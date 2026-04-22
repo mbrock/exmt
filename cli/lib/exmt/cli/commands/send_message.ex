@@ -10,7 +10,7 @@ defmodule Exmt.CLI.Commands.SendMessage do
       no_webpage: :boolean
     ],
     positionals: [:message],
-    builder: :messages_send_message,
+    builder: {MTProto.Telegram.API.Messages, :sendMessage},
     call_args: [:message],
     prepare: :prepare_request
 

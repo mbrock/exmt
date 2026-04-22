@@ -117,7 +117,7 @@ defmodule Exmt.CLI.Commands.Follow do
     with {:ok, decoded} <-
            Client.request_sync(
              client,
-             API.updates_get_state(),
+             API.Updates.getState(),
              Telegram.request_opts(context)
            ),
          {:ok, update_state} <- UpdateState.from_decoded(decoded),
@@ -205,8 +205,12 @@ defmodule Exmt.CLI.Commands.Follow do
   end
 
   defp poll_difference(client, context, loop_state) do
-    with {:ok, request} <- API.updates_get_difference(loop_state.update_state),
-         {:ok, decoded} <-
+    request =
+      loop_state.update_state
+      |> UpdateState.to_difference_opts()
+      |> API.Updates.getDifference()
+
+    with {:ok, decoded} <-
            Client.request_sync(
              client,
              request,
