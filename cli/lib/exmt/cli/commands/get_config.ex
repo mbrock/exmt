@@ -1,26 +1,7 @@
-defmodule MTProto.Playground.GetConfig do
-  @moduledoc """
-  Developer-facing end-to-end `help.getConfig` scenario runner.
+defmodule Exmt.CLI.Commands.GetConfig do
+  @moduledoc false
 
-  The top-level flow is intentionally written like executable pseudocode:
-
-  ```elixir
-  with {:ok, run} <- build_run(argv),
-       :ok <- print_banner(run),
-       {:ok, summary} <- run_scenario(run) do
-    print_summary(summary, run.opts)
-  end
-  ```
-
-  Each helper below owns one meaningful step in that flow:
-
-    * build the run context
-    * choose endpoints and session data
-    * try each endpoint in order
-    * connect a Telegram client
-    * issue `help.getConfig`
-    * print a summary
-  """
+  @behaviour Exmt.CLI.Command
 
   alias MTProto.{SessionData, TelegramKeys}
   alias MTProto.SessionStore.File, as: FileStore
@@ -41,6 +22,26 @@ defmodule MTProto.Playground.GetConfig do
 
   @api_id_env_vars ["TDLIB_API_ID", "TELEGRAM_API_ID"]
 
+  @impl true
+  def command, do: "get-config"
+
+  @impl true
+  def aliases, do: ["get_config"]
+
+  @impl true
+  def summary, do: "Perform help.getConfig using the Telegram client"
+
+  @impl true
+  def usage do
+    """
+    usage:
+      exmt get-config
+      exmt get-config --host 149.154.167.50 --dc-id 2
+      TDLIB_API_ID=123456 exmt get-config --session-file .exmt/demo.term --timeout 60000 --verbose
+    """
+  end
+
+  @impl true
   @spec run([binary()]) :: :ok | {:error, term()}
   def run(argv) do
     previous_trap_exit = Process.flag(:trap_exit, true)
@@ -54,7 +55,7 @@ defmodule MTProto.Playground.GetConfig do
       else
         {:error, reason} ->
           IO.puts(:stderr, "error: #{format_error(reason)}")
-          usage()
+          IO.puts(:stderr, usage())
           {:error, reason}
       end
     after
@@ -154,10 +155,11 @@ defmodule MTProto.Playground.GetConfig do
     end
   end
 
-  defp try_endpoints(
-         endpoints,
-         run
-       ) do
+  defp run_scenario(run) do
+    try_endpoints(run.endpoints, run)
+  end
+
+  defp try_endpoints(endpoints, run) do
     Enum.reduce_while(endpoints, {:error, []}, fn endpoint,
                                                   {:error, errors} ->
       print_attempt(endpoint)
@@ -185,10 +187,6 @@ defmodule MTProto.Playground.GetConfig do
       {:error, errors} ->
         {:error, {:all_endpoints_failed, Enum.reverse(errors)}}
     end
-  end
-
-  defp run_scenario(run) do
-    try_endpoints(run.endpoints, run)
   end
 
   defp try_endpoint(endpoint, run) do
@@ -401,14 +399,5 @@ defmodule MTProto.Playground.GetConfig do
     end
   catch
     :exit, _reason -> :ok
-  end
-
-  defp usage do
-    IO.puts("""
-    usage:
-      mix mtproto.get_config
-      mix mtproto.get_config --host 149.154.167.50 --dc-id 2
-      TDLIB_API_ID=123456 mix mtproto.get_config --session-file .exmt/demo.term --timeout 60000 --verbose
-    """)
   end
 end

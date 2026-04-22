@@ -1,0 +1,10 @@
+/_build/
+/cover/
+/deps/
+/doc/
+/tmp/
+/.exmt/
+/exmt
+erl_crash.dump
+*.ez
+exmt-*.tar
