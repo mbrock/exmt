@@ -1,5 +1,26 @@
 defmodule MTProto.Playground.GetConfig do
-  @moduledoc false
+  @moduledoc """
+  Developer-facing end-to-end `help.getConfig` scenario runner.
+
+  The top-level flow is intentionally written like executable pseudocode:
+
+  ```elixir
+  with {:ok, run} <- build_run(argv),
+       :ok <- print_banner(run),
+       {:ok, summary} <- run_scenario(run) do
+    print_summary(summary, run.opts)
+  end
+  ```
+
+  Each helper below owns one meaningful step in that flow:
+
+    * build the run context
+    * choose endpoints and session data
+    * try each endpoint in order
+    * connect a Telegram client
+    * issue `help.getConfig`
+    * print a summary
+  """
 
   alias MTProto.{SessionData, TelegramKeys}
   alias MTProto.SessionStore.File, as: FileStore
@@ -25,28 +46,10 @@ defmodule MTProto.Playground.GetConfig do
     previous_trap_exit = Process.flag(:trap_exit, true)
 
     try do
-      with {:ok, opts} <- parse_args(argv),
-           {:ok, api_id, api_id_source} <- fetch_api_id(),
-           session_file = session_file(opts),
-           {:ok, stored_session_data} <- FileStore.load(session_file),
-           endpoints = endpoints(opts, stored_session_data),
-           :ok <-
-             print_banner(
-               api_id_source,
-               endpoints,
-               opts,
-               session_file,
-               stored_session_data
-             ),
-           {:ok, summary} <-
-             try_endpoints(
-               endpoints,
-               api_id,
-               opts,
-               session_file,
-               stored_session_data
-             ) do
-        print_summary(summary, opts)
+      with {:ok, run} <- build_run(argv),
+           :ok <- print_banner(run),
+           {:ok, summary} <- run_scenario(run) do
+        print_summary(summary, run.opts)
         :ok
       else
         {:error, reason} ->
@@ -56,6 +59,23 @@ defmodule MTProto.Playground.GetConfig do
       end
     after
       Process.flag(:trap_exit, previous_trap_exit)
+    end
+  end
+
+  defp build_run(argv) do
+    with {:ok, opts} <- parse_args(argv),
+         {:ok, api_id, api_id_source} <- fetch_api_id(),
+         session_file = session_file(opts),
+         {:ok, stored_session_data} <- FileStore.load(session_file) do
+      {:ok,
+       %{
+         opts: opts,
+         api_id: api_id,
+         api_id_source: api_id_source,
+         session_file: session_file,
+         stored_session_data: stored_session_data,
+         endpoints: endpoints(opts, stored_session_data)
+       }}
     end
   end
 
@@ -136,22 +156,13 @@ defmodule MTProto.Playground.GetConfig do
 
   defp try_endpoints(
          endpoints,
-         api_id,
-         opts,
-         session_file,
-         stored_session_data
+         run
        ) do
     Enum.reduce_while(endpoints, {:error, []}, fn endpoint,
                                                   {:error, errors} ->
       print_attempt(endpoint)
 
-      case try_endpoint(
-             endpoint,
-             api_id,
-             opts,
-             session_file,
-             stored_session_data
-           ) do
+      case try_endpoint(endpoint, run) do
         {:ok, summary} ->
           {:halt, {:ok, summary}}
 
@@ -176,88 +187,102 @@ defmodule MTProto.Playground.GetConfig do
     end
   end
 
-  defp try_endpoint(endpoint, api_id, opts, session_file, stored_session_data) do
-    timeout = Keyword.get(opts, :timeout, @default_timeout)
-    verbose? = Keyword.get(opts, :verbose, false)
+  defp run_scenario(run) do
+    try_endpoints(run.endpoints, run)
+  end
 
-    session_data =
-      case stored_session_data do
-        %SessionData{dc_id: dc_id} = session_data
-        when dc_id == endpoint.dc_id ->
-          session_data
+  defp try_endpoint(endpoint, run) do
+    endpoint
+    |> client_opts(run)
+    |> start_client()
+    |> with_client(fn client ->
+      connect_and_get_config(client, endpoint, run)
+    end)
+  end
 
-        _ ->
-          nil
-      end
+  defp connect_and_get_config(client, endpoint, run) do
+    with {:ok, session_id} <- connect_client(client, run.opts),
+         {:ok, decoded} <- get_config(client, run) do
+      {:ok,
+       %{
+         endpoint: endpoint,
+         session_id: session_id,
+         layer: API.current_layer(),
+         result: %{kind: :decoded, decoded: decoded}
+       }}
+    end
+  end
 
-    client_opts = [
+  defp client_opts(endpoint, run) do
+    [
       host: endpoint.host,
       port: endpoint.port,
       public_keys: TelegramKeys.main_keys!(),
       notify_to: self(),
       pq_inner_data_mode: :dc,
       dc_id: endpoint.dc_id,
-      session_store: {FileStore, session_file},
+      session_store: {FileStore, run.session_file},
       load_session_data: false
     ]
+    |> maybe_put_session_data(session_data_for_endpoint(endpoint, run))
+  end
 
-    client_opts =
-      case session_data do
-        %SessionData{} ->
-          Keyword.put(client_opts, :session_data, session_data)
+  defp session_data_for_endpoint(
+         endpoint,
+         %{stored_session_data: %SessionData{dc_id: dc_id} = session_data}
+       )
+       when dc_id == endpoint.dc_id do
+    session_data
+  end
 
-        nil ->
-          client_opts
-      end
+  defp session_data_for_endpoint(_endpoint, _run), do: nil
 
-    case TelegramClient.start_link(client_opts) do
-      {:ok, client} ->
-        try do
-          with {:ok, session_id} <-
-                 TelegramClient.connect(client,
-                   timeout: timeout,
-                   on_mtproto_event: verbose_callback(:auth, verbose?)
-                 ),
-               {:ok, decoded} <-
-                 TelegramClient.get_config_sync(client,
-                   api_id: api_id,
-                   request: :help_get_config,
-                   timeout: timeout,
-                   on_mtproto_event: verbose_callback(:rpc, verbose?),
-                   on_telegram_event: verbose_callback(:rpc, verbose?)
-                 ) do
-            {:ok,
-             %{
-               endpoint: endpoint,
-               session_id: session_id,
-               layer: API.current_layer(),
-               result: %{kind: :decoded, decoded: decoded}
-             }}
-          end
-        after
-          stop_client(client)
-        end
+  defp maybe_put_session_data(opts, %SessionData{} = session_data) do
+    Keyword.put(opts, :session_data, session_data)
+  end
 
-      {:error, reason} ->
-        {:error, reason}
+  defp maybe_put_session_data(opts, nil), do: opts
+
+  defp start_client(opts) do
+    TelegramClient.start_link(opts)
+  end
+
+  defp with_client({:ok, client}, fun) when is_function(fun, 1) do
+    try do
+      fun.(client)
+    after
+      stop_client(client)
     end
   end
 
-  defp print_banner(
-         api_id_source,
-         endpoints,
-         opts,
-         session_file,
-         stored_session_data
-       ) do
+  defp with_client({:error, reason}, _fun), do: {:error, reason}
+
+  defp connect_client(client, opts) do
+    TelegramClient.connect(client,
+      timeout: timeout(opts),
+      on_mtproto_event: verbose_callback(:auth, opts)
+    )
+  end
+
+  defp get_config(client, run) do
+    TelegramClient.get_config_sync(client,
+      api_id: run.api_id,
+      request: :help_get_config,
+      timeout: timeout(run.opts),
+      on_mtproto_event: verbose_callback(:rpc, run.opts),
+      on_telegram_event: verbose_callback(:rpc, run.opts)
+    )
+  end
+
+  defp print_banner(run) do
     IO.puts(
-      "Using api_id from #{format_api_id_source(api_id_source)}; " <>
-        "layer=#{API.current_layer()} timeout=#{Keyword.get(opts, :timeout, @default_timeout)}ms"
+      "Using api_id from #{format_api_id_source(run.api_id_source)}; " <>
+        "layer=#{API.current_layer()} timeout=#{timeout(run.opts)}ms"
     )
 
-    IO.puts("Session file: #{session_file}")
+    IO.puts("Session file: #{run.session_file}")
 
-    case stored_session_data do
+    case run.stored_session_data do
       %SessionData{dc_id: dc_id} ->
         IO.puts("Stored session: present for dc #{dc_id}")
 
@@ -266,7 +291,7 @@ defmodule MTProto.Playground.GetConfig do
     end
 
     IO.puts(
-      "Endpoints: " <> Enum.map_join(endpoints, ", ", &format_endpoint/1)
+      "Endpoints: " <> Enum.map_join(run.endpoints, ", ", &format_endpoint/1)
     )
 
     :ok
@@ -278,6 +303,10 @@ defmodule MTProto.Playground.GetConfig do
 
   defp maybe_print_event(_phase, event, true) do
     IO.puts("  event: #{inspect(event, pretty: true)}")
+  end
+
+  defp verbose_callback(phase, opts) when is_list(opts) do
+    verbose_callback(phase, Keyword.get(opts, :verbose, false))
   end
 
   defp verbose_callback(phase, true) do
@@ -360,6 +389,10 @@ defmodule MTProto.Playground.GetConfig do
     |> Integer.to_string(16)
     |> String.downcase()
     |> String.pad_leading(8, "0")
+  end
+
+  defp timeout(opts) do
+    Keyword.get(opts, :timeout, @default_timeout)
   end
 
   defp stop_client(pid) when is_pid(pid) do
