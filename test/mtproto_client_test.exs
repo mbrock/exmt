@@ -95,9 +95,7 @@ defmodule MTProto.ClientTest do
     assert Client.session_data(client) == session_data
 
     assert :ok =
-             Client.ping(client, 99,
-               padding_bytes: :binary.copy(<<0xAA>>, 64)
-             )
+             Client.ping(client, 99, padding_bytes: :binary.copy(<<0xAA>>, 64))
 
     assert_receive {:fake_socket, :send, ^socket, <<0xEF>>}
     assert_receive {:fake_socket, :send, ^socket, ping_packet}
@@ -121,9 +119,7 @@ defmodule MTProto.ClientTest do
       start_restored_client()
 
     assert :ok =
-             Client.ping(client, 99,
-               padding_bytes: :binary.copy(<<0xAA>>, 64)
-             )
+             Client.ping(client, 99, padding_bytes: :binary.copy(<<0xAA>>, 64))
 
     assert_receive {:fake_socket, :send, ^socket, <<0xEF>>}
     assert_receive {:fake_socket, :send, ^socket, ping_packet}

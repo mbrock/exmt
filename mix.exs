@@ -5,13 +5,17 @@ defmodule Exmt.MixProject do
     [
       app: :exmt,
       version: "0.1.0",
-      elixir: "~> 1.19",
+      elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      aliases: aliases()
+      aliases: aliases(),
+      xref: [exclude: [:httpc]],
+      preferred_cli_env: [precommit: :test]
     ]
   end
 
+  # Elixir 1.15+ reads preferred envs from cli/0; older versions fall back to
+  # :preferred_cli_env in project/0 above.
   def cli do
     [
       preferred_envs: [precommit: :test]

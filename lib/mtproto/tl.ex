@@ -128,8 +128,11 @@ defmodule MTProto.TL do
       length(items)::little-unsigned-32, body::binary>>
   end
 
-  @spec decode_vector(binary(), (binary() ->
-                                   {:ok, term(), binary()} | {:error, term()})) ::
+  @spec decode_vector(
+          binary(),
+          (binary() ->
+             {:ok, term(), binary()} | {:error, term()})
+        ) ::
           {:ok, list(), binary()} | {:error, term()}
   def decode_vector(
         <<@vector_constructor::little-unsigned-32, count::little-unsigned-32,

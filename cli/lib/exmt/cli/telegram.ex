@@ -48,7 +48,7 @@ defmodule Exmt.CLI.Telegram do
     ]
   end
 
-  @spec run_command((-> :ok | {:error, term()})) :: :ok | {:error, term()}
+  @spec run_command((() -> :ok | {:error, term()})) :: :ok | {:error, term()}
   def run_command(fun) when is_function(fun, 0) do
     previous_trap_exit = Process.flag(:trap_exit, true)
 
@@ -103,8 +103,11 @@ defmodule Exmt.CLI.Telegram do
     :ok
   end
 
-  @spec try_endpoints(context(), (pid(), map() ->
-                                    {:ok, term()} | {:error, term()})) ::
+  @spec try_endpoints(
+          context(),
+          (pid(), map() ->
+             {:ok, term()} | {:error, term()})
+        ) ::
           {:ok, term()} | {:error, term()}
   def try_endpoints(context, fun) when is_function(fun, 2) do
     do_try_endpoints(context.endpoints, context, fun, [])

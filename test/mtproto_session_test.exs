@@ -31,8 +31,7 @@ defmodule MTProto.SessionTest do
                session_id: 123
              )
 
-    expected_msg_id =
-      MessageId.next(100, now_ns + 5_000_000_000)
+    expected_msg_id = MessageId.next(100, now_ns + 5_000_000_000)
 
     assert packet.salt == 42
     assert packet.message_id == expected_msg_id

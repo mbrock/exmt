@@ -21,17 +21,16 @@ defmodule MTProto.Telegram.UpdateStateTest do
   end
 
   test "builds update state from decoded updates.state" do
-    decoded =
-      %Decoded{
-        tl_name: "updates.state",
-        fields: %{
-          pts: 10,
-          qts: 20,
-          date: 30,
-          seq: 40,
-          unread_count: 50
-        }
+    decoded = %Decoded{
+      tl_name: "updates.state",
+      fields: %{
+        pts: 10,
+        qts: 20,
+        date: 30,
+        seq: 40,
+        unread_count: 50
       }
+    }
 
     assert {:ok,
             %UpdateState{

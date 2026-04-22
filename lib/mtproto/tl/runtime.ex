@@ -6,7 +6,7 @@ defmodule MTProto.TL.Runtime do
   import Bitwise
 
   alias MTProto.TL
-  alias MTProto.TL.JSONSchema
+  alias MTProto.TL.VendoredSchema
   alias MTProto.TL.{Normalize, Parser}
   alias MTProto.TL.Schema.Definition
   alias MTProto.TL.Schema.Param
@@ -413,12 +413,8 @@ defmodule MTProto.TL.Runtime do
 
   defp load_schema_definitions(schema_name) do
     cond do
-      File.exists?(json_schema_path(schema_name)) ->
-        {:ok, normalized_schema} =
-          JSONSchema.load_file(json_schema_path(schema_name),
-            name: schema_name
-          )
-
+      VendoredSchema.available?(schema_name) ->
+        {:ok, normalized_schema} = VendoredSchema.load(schema_name)
         normalized_schema.definitions
 
       true ->
@@ -430,10 +426,6 @@ defmodule MTProto.TL.Runtime do
 
         normalized_schema.definitions
     end
-  end
-
-  defp json_schema_path(schema_name) do
-    Path.join(@schemas_dir, "#{schema_name}.json")
   end
 
   defp tl_schema_path(schema_name) do
