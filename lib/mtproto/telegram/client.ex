@@ -286,6 +286,86 @@ defmodule MTProto.Telegram.Client do
     end
   end
 
+  @spec help_get_nearest_dc(GenServer.server(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def help_get_nearest_dc(server, opts \\ []) do
+    invoke(
+      server,
+      API.help_get_nearest_dc(),
+      opts
+      |> Keyword.put_new(:request, :help_get_nearest_dc)
+      |> Keyword.put_new(:result_type, "NearestDc")
+    )
+  end
+
+  @spec help_get_nearest_dc_sync(GenServer.server(), keyword()) ::
+          {:ok, term()} | {:error, term()}
+  def help_get_nearest_dc_sync(server, opts \\ []) do
+    invoke_sync(
+      server,
+      API.help_get_nearest_dc(),
+      opts
+      |> Keyword.put_new(:request, :help_get_nearest_dc)
+      |> Keyword.put_new(:result_type, "NearestDc")
+    )
+  end
+
+  @spec contacts_get_contacts_sync(GenServer.server(), keyword()) ::
+          {:ok, term()} | {:error, term()}
+  def contacts_get_contacts_sync(server, opts \\ []) do
+    with {:ok, query} <- API.contacts_get_contacts(opts) do
+      invoke_sync(
+        server,
+        query,
+        opts
+        |> Keyword.put_new(:request, :contacts_get_contacts)
+        |> Keyword.put_new(:result_type, "contacts.Contacts")
+      )
+    end
+  end
+
+  @spec messages_get_dialogs_sync(GenServer.server(), keyword()) ::
+          {:ok, term()} | {:error, term()}
+  def messages_get_dialogs_sync(server, opts \\ []) do
+    with {:ok, query} <- API.messages_get_dialogs(opts) do
+      invoke_sync(
+        server,
+        query,
+        opts
+        |> Keyword.put_new(:request, :messages_get_dialogs)
+        |> Keyword.put_new(:result_type, "messages.Dialogs")
+      )
+    end
+  end
+
+  @spec messages_get_history_sync(GenServer.server(), keyword()) ::
+          {:ok, term()} | {:error, term()}
+  def messages_get_history_sync(server, opts) when is_list(opts) do
+    with {:ok, query} <- API.messages_get_history(opts) do
+      invoke_sync(
+        server,
+        query,
+        opts
+        |> Keyword.put_new(:request, :messages_get_history)
+        |> Keyword.put_new(:result_type, "messages.Messages")
+      )
+    end
+  end
+
+  @spec messages_send_message_sync(GenServer.server(), binary(), keyword()) ::
+          {:ok, term()} | {:error, term()}
+  def messages_send_message_sync(server, message, opts \\ []) do
+    with {:ok, query} <- API.messages_send_message(message, opts) do
+      invoke_sync(
+        server,
+        query,
+        opts
+        |> Keyword.put_new(:request, :messages_send_message)
+        |> Keyword.put_new(:result_type, "Updates")
+      )
+    end
+  end
+
   @impl true
   def init(opts) do
     Process.flag(:trap_exit, true)

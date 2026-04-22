@@ -181,6 +181,10 @@ defmodule Exmt.CLI.Telegram do
   def format_error({:invalid_api_hash, source}),
     do: "invalid api_hash in #{format_env_source(source)}"
 
+  def format_error({:invalid_peer, value}),
+    do:
+      "invalid --peer value #{inspect(value)} (expected self|empty|chat:<id>|user:<id>:<access_hash>|channel:<id>:<access_hash>)"
+
   def format_error({:all_endpoints_failed, errors}) do
     Enum.map_join(errors, "; ", fn {endpoint, reason} ->
       "#{format_endpoint(endpoint)} => #{format_error(reason)}"
@@ -211,6 +215,33 @@ defmodule Exmt.CLI.Telegram do
 
   def format_error(%RPCError{} = error), do: Exception.message(error)
   def format_error(reason), do: inspect(reason)
+
+  @spec parse_peer(binary()) ::
+          {:ok,
+           :self
+           | :empty
+           | {:chat, integer()}
+           | {:user, integer(), integer()}
+           | {:channel, integer(), integer()}}
+          | {:error, term()}
+  def parse_peer("self"), do: {:ok, :self}
+  def parse_peer("empty"), do: {:ok, :empty}
+
+  def parse_peer(value) when is_binary(value) do
+    case String.split(value, ":") do
+      ["chat", id] ->
+        parse_single_int_peer(:chat, id, value)
+
+      ["user", id, access_hash] ->
+        parse_double_int_peer(:user, id, access_hash, value)
+
+      ["channel", id, access_hash] ->
+        parse_double_int_peer(:channel, id, access_hash, value)
+
+      _ ->
+        {:error, {:invalid_peer, value}}
+    end
+  end
 
   defp session_file(opts) do
     opts
@@ -454,6 +485,29 @@ defmodule Exmt.CLI.Telegram do
   end
 
   defp format_env_source({:env, env_var}), do: "$#{env_var}"
+
+  defp parse_single_int_peer(kind, id, original) do
+    case parse_integer_string(id) do
+      {:ok, parsed} -> {:ok, {kind, parsed}}
+      :error -> {:error, {:invalid_peer, original}}
+    end
+  end
+
+  defp parse_double_int_peer(kind, id, access_hash, original) do
+    with {:ok, parsed_id} <- parse_integer_string(id),
+         {:ok, parsed_hash} <- parse_integer_string(access_hash) do
+      {:ok, {kind, parsed_id, parsed_hash}}
+    else
+      :error -> {:error, {:invalid_peer, original}}
+    end
+  end
+
+  defp parse_integer_string(value) do
+    case Integer.parse(value) do
+      {parsed, ""} -> {:ok, parsed}
+      _ -> :error
+    end
+  end
 
   defp stop_client(pid) when is_pid(pid) do
     if Process.alive?(pid) do

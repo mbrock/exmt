@@ -4,10 +4,31 @@ defmodule Exmt.CLI do
   """
 
   alias Exmt.CLI.Commands.GetConfig
-  alias Exmt.CLI.Commands.{Follow, Whoami}
+
+  alias Exmt.CLI.Commands.{
+    Contacts,
+    Dialogs,
+    Follow,
+    GetNearestDC,
+    History,
+    SendMessage,
+    Whoami
+  }
+
   alias Exmt.CLI.Commands.Auth.{SendCode, SignIn}
 
-  @commands [GetConfig, Whoami, Follow, SendCode, SignIn]
+  @commands [
+    GetConfig,
+    GetNearestDC,
+    Whoami,
+    Contacts,
+    Dialogs,
+    History,
+    SendMessage,
+    Follow,
+    SendCode,
+    SignIn
+  ]
 
   @spec main([binary()]) :: no_return()
   def main(argv) do
@@ -88,7 +109,12 @@ defmodule Exmt.CLI do
       exmt help
       exmt help get-config
       exmt get-config
+      exmt get-nearest-dc
       exmt whoami
+      exmt contacts
+      exmt dialogs
+      exmt history --peer self
+      exmt send-message --peer self "hello from exmt"
       exmt follow
       exmt auth send-code <phone-number>
       exmt auth sign-in <phone-number> <phone-code-hash> <phone-code>

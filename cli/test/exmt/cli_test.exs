@@ -11,7 +11,12 @@ defmodule Exmt.CLITest do
 
     assert output =~ "usage:"
     assert output =~ "get-config"
+    assert output =~ "get-nearest-dc"
     assert output =~ "whoami"
+    assert output =~ "contacts"
+    assert output =~ "dialogs"
+    assert output =~ "history"
+    assert output =~ "send-message"
     assert output =~ "follow"
     assert output =~ "auth send-code"
   end

@@ -21,9 +21,14 @@ Current working pieces include:
 - official Telegram schema vendored as an Elixir term at `priv/tl/telegram_api.exs`
 - a working CLI that can:
   - `get-config`
+  - `get-nearest-dc`
   - `auth send-code`
   - `auth sign-in`
   - `whoami`
+  - `contacts`
+  - `dialogs`
+  - `history`
+  - `send-message`
   - `follow`
 
 `follow` currently persists Telegram updates state and polls `updates.getDifference`.
@@ -117,6 +122,41 @@ Fetch the current logged-in user:
 ```bash
 cd cli
 ./exmt whoami --timeout 60000
+```
+
+Fetch nearest DC info:
+
+```bash
+cd cli
+./exmt get-nearest-dc --timeout 60000
+```
+
+List contacts:
+
+```bash
+cd cli
+./exmt contacts --timeout 60000
+```
+
+List dialogs:
+
+```bash
+cd cli
+./exmt dialogs --limit 50 --timeout 60000
+```
+
+Fetch message history for self:
+
+```bash
+cd cli
+./exmt history --peer self --limit 20 --timeout 60000
+```
+
+Send a message:
+
+```bash
+cd cli
+./exmt send-message --peer self "hello from exmt" --timeout 60000
 ```
 
 Tail Telegram updates:

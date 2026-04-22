@@ -100,6 +100,52 @@ defmodule MTProto.Telegram.APITest do
     assert API.updates_get_state() == <<0xEDD4882A::little-unsigned-32>>
   end
 
+  test "builds help.getNearestDc" do
+    assert API.help_get_nearest_dc() == <<0x1FB33026::little-unsigned-32>>
+  end
+
+  test "builds contacts.getContacts" do
+    assert {:ok, request} = API.contacts_get_contacts(hash: 42)
+
+    assert request ==
+             <<0x5DD69E12::little-unsigned-32, TL.encode_long(42)::binary>>
+  end
+
+  test "builds messages.getDialogs using inputPeerEmpty by default" do
+    assert {:ok, request} = API.messages_get_dialogs(limit: 25)
+
+    assert request ==
+             <<0xA0F4CB4F::little-unsigned-32, TL.encode_int(0)::binary,
+               TL.encode_int(0)::binary, TL.encode_int(0)::binary,
+               0x7F3B18EA::little-unsigned-32, TL.encode_int(25)::binary,
+               TL.encode_long(0)::binary>>
+  end
+
+  test "builds messages.getHistory for inputPeerSelf by default" do
+    assert {:ok, request} = API.messages_get_history(limit: 10)
+
+    assert request ==
+             <<0x4423E6C5::little-unsigned-32, 0x7DA07EC9::little-unsigned-32,
+               TL.encode_int(0)::binary, TL.encode_int(0)::binary,
+               TL.encode_int(0)::binary, TL.encode_int(10)::binary,
+               TL.encode_int(0)::binary, TL.encode_int(0)::binary,
+               TL.encode_long(0)::binary>>
+  end
+
+  test "builds messages.sendMessage for a self peer" do
+    assert {:ok, request} =
+             API.messages_send_message("hello",
+               peer: :self,
+               random_id: 123_456
+             )
+
+    assert request ==
+             <<0x545CD15A::little-unsigned-32, TL.encode_int(0)::binary,
+               0x7DA07EC9::little-unsigned-32,
+               TL.encode_bytes("hello")::binary,
+               TL.encode_signed_long(123_456)::binary>>
+  end
+
   test "builds updates.getDifference from update state" do
     state =
       MTProto.Telegram.UpdateState.new!(

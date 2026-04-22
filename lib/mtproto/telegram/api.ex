@@ -19,6 +19,16 @@ defmodule MTProto.Telegram.API do
   @users_get_full_user 0xB60F5918
   @updates_get_state 0xEDD4882A
   @updates_get_difference 0x19C2F763
+  @help_get_nearest_dc 0x1FB33026
+  @contacts_get_contacts 0x5DD69E12
+  @messages_get_dialogs 0xA0F4CB4F
+  @messages_get_history 0x4423E6C5
+  @messages_send_message 0x545CD15A
+  @input_peer_empty 0x7F3B18EA
+  @input_peer_self 0x7DA07EC9
+  @input_peer_chat 0x35A95CB9
+  @input_peer_user 0xDDE8A54C
+  @input_peer_channel 0x27BCBBFC
 
   @default_layer 214
   @default_device_model "exmt"
@@ -39,6 +49,102 @@ defmodule MTProto.Telegram.API do
 
   @spec updates_get_state() :: binary()
   def updates_get_state, do: <<@updates_get_state::little-unsigned-32>>
+
+  @spec help_get_nearest_dc() :: binary()
+  def help_get_nearest_dc, do: <<@help_get_nearest_dc::little-unsigned-32>>
+
+  @spec contacts_get_contacts(keyword()) :: {:ok, binary()} | {:error, term()}
+  def contacts_get_contacts(opts \\ []) when is_list(opts) do
+    with {:ok, hash} <- fetch_long_opt(opts, :hash, 0) do
+      {:ok,
+       <<@contacts_get_contacts::little-unsigned-32,
+         TL.encode_long(hash)::binary>>}
+    end
+  end
+
+  @spec messages_get_dialogs(keyword()) :: {:ok, binary()} | {:error, term()}
+  def messages_get_dialogs(opts \\ []) when is_list(opts) do
+    with {:ok, exclude_pinned} <-
+           fetch_boolean_opt(opts, :exclude_pinned, false),
+         {:ok, folder_id} <- fetch_optional_integer_opt(opts, :folder_id),
+         {:ok, offset_date} <- fetch_integer_opt(opts, :offset_date, 0),
+         {:ok, offset_id} <- fetch_integer_opt(opts, :offset_id, 0),
+         {:ok, offset_peer} <-
+           fetch_input_peer_opt(opts, :offset_peer, :empty),
+         {:ok, limit} <- fetch_integer_opt(opts, :limit, 20),
+         {:ok, hash} <- fetch_long_opt(opts, :hash, 0) do
+      flags =
+        0
+        |> put_flag(0, exclude_pinned)
+        |> put_flag(1, not is_nil(folder_id))
+
+      {:ok,
+       [
+         <<@messages_get_dialogs::little-unsigned-32>>,
+         TL.encode_int(flags),
+         maybe_encode_int(folder_id),
+         TL.encode_int(offset_date),
+         TL.encode_int(offset_id),
+         offset_peer,
+         TL.encode_int(limit),
+         TL.encode_long(hash)
+       ]
+       |> IO.iodata_to_binary()}
+    end
+  end
+
+  @spec messages_get_history(keyword()) :: {:ok, binary()} | {:error, term()}
+  def messages_get_history(opts) when is_list(opts) do
+    with {:ok, peer} <- fetch_input_peer_opt(opts, :peer, :self),
+         {:ok, offset_id} <- fetch_integer_opt(opts, :offset_id, 0),
+         {:ok, offset_date} <- fetch_integer_opt(opts, :offset_date, 0),
+         {:ok, add_offset} <- fetch_integer_opt(opts, :add_offset, 0),
+         {:ok, limit} <- fetch_integer_opt(opts, :limit, 20),
+         {:ok, max_id} <- fetch_integer_opt(opts, :max_id, 0),
+         {:ok, min_id} <- fetch_integer_opt(opts, :min_id, 0),
+         {:ok, hash} <- fetch_long_opt(opts, :hash, 0) do
+      {:ok,
+       [
+         <<@messages_get_history::little-unsigned-32>>,
+         peer,
+         TL.encode_int(offset_id),
+         TL.encode_int(offset_date),
+         TL.encode_int(add_offset),
+         TL.encode_int(limit),
+         TL.encode_int(max_id),
+         TL.encode_int(min_id),
+         TL.encode_long(hash)
+       ]
+       |> IO.iodata_to_binary()}
+    end
+  end
+
+  @spec messages_send_message(binary(), keyword()) ::
+          {:ok, binary()} | {:error, term()}
+  def messages_send_message(message, opts \\ [])
+      when is_binary(message) and is_list(opts) do
+    with {:ok, peer} <- fetch_input_peer_opt(opts, :peer, :self),
+         {:ok, random_id} <- fetch_signed_long_opt(opts, :random_id),
+         {:ok, no_webpage} <- fetch_boolean_opt(opts, :no_webpage, false),
+         {:ok, silent} <- fetch_boolean_opt(opts, :silent, false),
+         {:ok, clear_draft} <- fetch_boolean_opt(opts, :clear_draft, false) do
+      flags =
+        0
+        |> put_flag(1, no_webpage)
+        |> put_flag(5, silent)
+        |> put_flag(7, clear_draft)
+
+      {:ok,
+       [
+         <<@messages_send_message::little-unsigned-32>>,
+         TL.encode_int(flags),
+         peer,
+         TL.encode_bytes(message),
+         TL.encode_signed_long(random_id)
+       ]
+       |> IO.iodata_to_binary()}
+    end
+  end
 
   @spec updates_get_difference(MTProto.Telegram.UpdateState.t() | keyword()) ::
           {:ok, binary()} | {:error, term()}
@@ -213,6 +319,25 @@ defmodule MTProto.Telegram.API do
   defp validate_query(_query), do: {:error, :invalid_query}
 
   defp input_user_self, do: <<@input_user_self::little-unsigned-32>>
+  defp input_peer_empty, do: <<@input_peer_empty::little-unsigned-32>>
+  defp input_peer_self, do: <<@input_peer_self::little-unsigned-32>>
+
+  defp input_peer_chat(chat_id) when is_integer(chat_id) do
+    <<@input_peer_chat::little-unsigned-32, TL.encode_long(chat_id)::binary>>
+  end
+
+  defp input_peer_user(user_id, access_hash)
+       when is_integer(user_id) and is_integer(access_hash) do
+    <<@input_peer_user::little-unsigned-32, TL.encode_long(user_id)::binary,
+      TL.encode_long(access_hash)::binary>>
+  end
+
+  defp input_peer_channel(channel_id, access_hash)
+       when is_integer(channel_id) and is_integer(access_hash) do
+    <<@input_peer_channel::little-unsigned-32,
+      TL.encode_long(channel_id)::binary,
+      TL.encode_long(access_hash)::binary>>
+  end
 
   defp fetch_integer_opt(opts, key, default \\ :missing) do
     case Keyword.fetch(opts, key) do
@@ -220,6 +345,38 @@ defmodule MTProto.Telegram.API do
       {:ok, _value} -> {:error, {:invalid_option, key}}
       :error when default != :missing -> {:ok, default}
       :error -> {:error, {:missing_option, key}}
+    end
+  end
+
+  defp fetch_long_opt(opts, key, default) do
+    case Keyword.fetch(opts, key) do
+      {:ok, value}
+      when is_integer(value) and value >= 0 and value <= 0xFFFF_FFFF_FFFF_FFFF ->
+        {:ok, value}
+
+      {:ok, _value} ->
+        {:error, {:invalid_option, key}}
+
+      :error when default != :missing ->
+        {:ok, default}
+
+      :error ->
+        {:error, {:missing_option, key}}
+    end
+  end
+
+  defp fetch_signed_long_opt(opts, key) do
+    case Keyword.fetch(opts, key) do
+      {:ok, value}
+      when is_integer(value) and value >= -0x8000_0000_0000_0000 and
+             value <= 0x7FFF_FFFF_FFFF_FFFF ->
+        {:ok, value}
+
+      {:ok, _value} ->
+        {:error, {:invalid_option, key}}
+
+      :error ->
+        {:error, {:missing_option, key}}
     end
   end
 
@@ -286,6 +443,32 @@ defmodule MTProto.Telegram.API do
         {:ok, nil}
     end
   end
+
+  defp fetch_input_peer_opt(opts, key, default) do
+    case Keyword.fetch(opts, key) do
+      {:ok, value} ->
+        normalize_input_peer(value, key)
+
+      :error ->
+        normalize_input_peer(default, key)
+    end
+  end
+
+  defp normalize_input_peer(:empty, _key), do: {:ok, input_peer_empty()}
+  defp normalize_input_peer(:self, _key), do: {:ok, input_peer_self()}
+
+  defp normalize_input_peer({:chat, chat_id}, _key) when is_integer(chat_id),
+    do: {:ok, input_peer_chat(chat_id)}
+
+  defp normalize_input_peer({:user, user_id, access_hash}, _key)
+       when is_integer(user_id) and is_integer(access_hash),
+       do: {:ok, input_peer_user(user_id, access_hash)}
+
+  defp normalize_input_peer({:channel, channel_id, access_hash}, _key)
+       when is_integer(channel_id) and is_integer(access_hash),
+       do: {:ok, input_peer_channel(channel_id, access_hash)}
+
+  defp normalize_input_peer(_value, key), do: {:error, {:invalid_option, key}}
 
   defp validate_binary_arg(value, _name) when is_binary(value),
     do: {:ok, value}
