@@ -78,12 +78,11 @@ defmodule MTProto.TL.RuntimeTest do
   end
 
   test "extracts structured rpc_error metadata" do
-    decoded =
-      %Decoded{
-        tl_name: "rpc_error",
-        type_name: "RpcError",
-        fields: %{error_code: 420, error_message: "FLOOD_WAIT_12"}
-      }
+    decoded = %Decoded{
+      tl_name: "rpc_error",
+      type_name: "RpcError",
+      fields: %{error_code: 420, error_message: "FLOOD_WAIT_12"}
+    }
 
     assert {:ok,
             %RPCError{
@@ -97,17 +96,16 @@ defmodule MTProto.TL.RuntimeTest do
   end
 
   test "extracts migrate target from gzip_packed rpc_error" do
-    decoded =
-      %Decoded{
-        tl_name: "gzip_packed",
-        fields: %{
-          unpacked: %Decoded{
-            tl_name: "rpc_error",
-            type_name: "RpcError",
-            fields: %{error_code: 303, error_message: "PHONE_MIGRATE_4"}
-          }
+    decoded = %Decoded{
+      tl_name: "gzip_packed",
+      fields: %{
+        unpacked: %Decoded{
+          tl_name: "rpc_error",
+          type_name: "RpcError",
+          fields: %{error_code: 303, error_message: "PHONE_MIGRATE_4"}
         }
       }
+    }
 
     assert {:ok,
             %RPCError{

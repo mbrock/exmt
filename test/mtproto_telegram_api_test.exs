@@ -35,8 +35,7 @@ defmodule MTProto.Telegram.APITest do
   end
 
   test "defaults to the current layer" do
-    assert {:ok, request} =
-             API.invoke_with_layer(<<1, 2, 3, 4>>)
+    assert {:ok, request} = API.invoke_with_layer(<<1, 2, 3, 4>>)
 
     assert request ==
              <<0xDA9B0D0D::little-unsigned-32,

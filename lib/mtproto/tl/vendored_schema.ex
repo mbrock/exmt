@@ -35,7 +35,8 @@ defmodule MTProto.TL.VendoredSchema do
 
   @spec load(atom()) :: {:ok, NormalizedSchema.t()} | {:error, term()}
   def load(schema_name) do
-    with {:ok, %{"constructors" => constructors}} <- fetch_schema(schema_name),
+    with {:ok, %{"constructors" => constructors}} <-
+           fetch_schema(schema_name),
          {:ok, definitions} <- load_entries(constructors, :constructor, []) do
       {:ok,
        Normalize.normalize(

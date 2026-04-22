@@ -103,8 +103,11 @@ defmodule Exmt.CLI.Telegram do
     :ok
   end
 
-  @spec try_endpoints(context(), (pid(), map() ->
-                                    {:ok, term()} | {:error, term()})) ::
+  @spec try_endpoints(
+          context(),
+          (pid(), map() ->
+             {:ok, term()} | {:error, term()})
+        ) ::
           {:ok, term()} | {:error, term()}
   def try_endpoints(context, fun) when is_function(fun, 2) do
     do_try_endpoints(context.endpoints, context, fun, [])

@@ -48,8 +48,14 @@ Important modules:
 
 ## Requirements
 
-- Elixir `~> 1.19`
-- Erlang/OTP compatible with the repo's `.tool-versions`
+- Elixir `~> 1.14` (tested on 1.14 and 1.19)
+- Erlang/OTP compatible with the repo's `.tool-versions` (OTP 25+)
+
+`.tool-versions` pins the preferred development toolchain (Elixir 1.19.5 /
+OTP 28.3.1). The Ubuntu-packaged Elixir 1.14 / OTP 25 also builds and passes
+the full test suite. The only part that needs Elixir 1.18+ is
+`mix tl.fetch_telegram_schema`, which uses the built-in `JSON` module to
+decode the upstream schema before writing the vendored `.exs`.
 
 ## Development
 

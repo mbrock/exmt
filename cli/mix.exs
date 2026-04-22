@@ -5,17 +5,12 @@ defmodule ExmtCLI.MixProject do
     [
       app: :exmt_cli,
       version: "0.1.0",
-      elixir: "~> 1.19",
+      elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       escript: escript(),
       deps: deps(),
-      aliases: aliases()
-    ]
-  end
-
-  def cli do
-    [
-      preferred_envs: [precommit: :test]
+      aliases: aliases(),
+      preferred_cli_env: [precommit: :test]
     ]
   end
 

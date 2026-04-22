@@ -2,19 +2,16 @@
 
 ## Build setup (from a fresh machine)
 
-The project pins Erlang/OTP 28.3.1 and Elixir 1.19.5-otp-28 via `.tool-versions`.
+`.tool-versions` pins Erlang/OTP 28.3.1 and Elixir 1.19.5-otp-28 — the
+preferred development toolchain. The project floor is `~> 1.14` and the full
+test suite passes on Ubuntu 24.04's apt `elixir` / `erlang` packages
+(Elixir 1.14 / OTP 25) too. Either works.
 
-Do not try `apt install elixir` on Ubuntu 24.04. It ships Elixir 1.14 / OTP 25,
-and `mix.exs` declares `elixir: "~> 1.19"`, so Mix refuses immediately:
-
-> `(Mix) You're trying to run :exmt on Elixir v1.14.0 but it has declared in its mix.exs file it supports only Elixir ~> 1.19`
-
-The runtime itself no longer needs Elixir 1.18+ (the schema is vendored as a
-compiled Elixir term via `@external_resource`, see `MTProto.TL.VendoredSchema`),
-but the project floor is still 1.19 for language features. The only place that
-calls `JSON.decode/1` is `mix tl.fetch_telegram_schema`, which is dev-only.
-
-Install the pinned toolchain via mise instead.
+The dev-only `mix tl.fetch_telegram_schema` task calls `JSON.decode/1`, which
+only exists on Elixir 1.18+. Warning is suppressed via
+`@compile {:no_warn_undefined, {JSON, :decode, 1}}`; on 1.14 the task
+compiles fine but will crash if run. The runtime path (schema loading,
+decoding) has no JSON dependency.
 
 ### Install the toolchain with mise
 

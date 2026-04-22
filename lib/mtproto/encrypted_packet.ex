@@ -108,7 +108,8 @@ defmodule MTProto.EncryptedPacket do
   end
 
   defp validate_body(body)
-       when is_binary(body) and rem(byte_size(body), 4) == 0, do: :ok
+       when is_binary(body) and rem(byte_size(body), 4) == 0,
+       do: :ok
 
   defp validate_body(_), do: {:error, :invalid_body}
 

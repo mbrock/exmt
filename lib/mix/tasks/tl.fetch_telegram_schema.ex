@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.Tl.FetchTelegramSchema do
   use Mix.Task
 
-  @compile {:no_warn_undefined, {:httpc, :request, 4}}
+  @compile {:no_warn_undefined, [{:httpc, :request, 4}, {JSON, :decode, 1}]}
 
   @shortdoc "Fetch the official Telegram schema snapshot as an Elixir term"
 

@@ -237,8 +237,7 @@ defmodule MTProto.Telegram.ClientTest do
                session_id: 123
              )
 
-    assert {:ok, query} =
-             API.auth_send_code("+15551234567", "hash-123", opts)
+    assert {:ok, query} = API.auth_send_code("+15551234567", "hash-123", opts)
 
     assert {:ok, expected_body} = API.wrap_request(query, opts)
     assert decoded_request_packet.body == expected_body
