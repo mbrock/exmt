@@ -17,7 +17,8 @@ defmodule MTProto.Transport.Abridged do
   def new_decoder, do: %Decoder{}
 
   @spec encode(binary(), keyword()) :: binary()
-  def encode(payload, opts \\ []) when is_binary(payload) and rem(byte_size(payload), 4) == 0 do
+  def encode(payload, opts \\ [])
+      when is_binary(payload) and rem(byte_size(payload), 4) == 0 do
     words = div(byte_size(payload), 4)
     quick_ack? = Keyword.get(opts, :quick_ack, false)
 
@@ -31,11 +32,13 @@ defmodule MTProto.Transport.Abridged do
         <<tag, words::little-unsigned-size(24), payload::binary>>
 
       true ->
-        raise ArgumentError, "abridged payload is too large: #{byte_size(payload)} bytes"
+        raise ArgumentError,
+              "abridged payload is too large: #{byte_size(payload)} bytes"
     end
   end
 
-  @spec feed(Decoder.t(), binary()) :: {:ok, Decoder.t(), [binary() | {:quick_ack, non_neg_integer()}]}
+  @spec feed(Decoder.t(), binary()) ::
+          {:ok, Decoder.t(), [binary() | {:quick_ack, non_neg_integer()}]}
   def feed(%Decoder{buffer: buffer} = decoder, chunk) when is_binary(chunk) do
     decode_frames(%{decoder | buffer: buffer <> chunk}, [])
   end

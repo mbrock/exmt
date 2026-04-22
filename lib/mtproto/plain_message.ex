@@ -15,14 +15,14 @@ defmodule MTProto.PlainMessage do
   def encode(%__MODULE__{message_id: message_id, body: body})
       when is_integer(message_id) and message_id >= 0 and is_binary(body) and
              byte_size(body) <= 0xFFFF_FFFF do
-    <<0::little-unsigned-64, message_id::little-unsigned-64, byte_size(body)::little-unsigned-32,
-      body::binary>>
+    <<0::little-unsigned-64, message_id::little-unsigned-64,
+      byte_size(body)::little-unsigned-32, body::binary>>
   end
 
   @spec decode(binary()) :: {:ok, t()} | {:error, term()}
   def decode(
-        <<0::little-unsigned-64, message_id::little-unsigned-64, body_len::little-unsigned-32,
-          rest::binary>>
+        <<0::little-unsigned-64, message_id::little-unsigned-64,
+          body_len::little-unsigned-32, rest::binary>>
       ) do
     if byte_size(rest) < body_len do
       {:error, :short_plain_message}

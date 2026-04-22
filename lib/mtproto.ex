@@ -1,6 +1,6 @@
 defmodule MTProto do
   @moduledoc """
-  Small sans-IO MTProto client core.
+  Small sans-IO MTProto client building blocks.
   """
 
   alias MTProto.Core

@@ -48,8 +48,13 @@ defmodule MTProto.Core do
 
   @spec begin_auth_key_exchange(t(), non_neg_integer(), binary()) ::
           {:ok, t(), [effect()]} | {:error, term()}
-  def begin_auth_key_exchange(%__MODULE__{phase: :idle} = state, now_ns, nonce)
-      when is_integer(now_ns) and now_ns >= 0 and is_binary(nonce) and byte_size(nonce) == 16 do
+  def begin_auth_key_exchange(
+        %__MODULE__{phase: :idle} = state,
+        now_ns,
+        nonce
+      )
+      when is_integer(now_ns) and now_ns >= 0 and is_binary(nonce) and
+             byte_size(nonce) == 16 do
     msg_id = MessageId.next(state.last_msg_id, now_ns)
     body = KeyExchange.encode_req_pq_multi(nonce)
 
@@ -75,11 +80,13 @@ defmodule MTProto.Core do
      }, effects}
   end
 
-  def begin_auth_key_exchange(%__MODULE__{}, _now_ns, nonce) when not is_binary(nonce) do
+  def begin_auth_key_exchange(%__MODULE__{}, _now_ns, nonce)
+      when not is_binary(nonce) do
     {:error, :invalid_nonce}
   end
 
-  def begin_auth_key_exchange(%__MODULE__{}, _now_ns, nonce) when byte_size(nonce) != 16 do
+  def begin_auth_key_exchange(%__MODULE__{}, _now_ns, nonce)
+      when byte_size(nonce) != 16 do
     {:error, :invalid_nonce}
   end
 
@@ -87,32 +94,40 @@ defmodule MTProto.Core do
     {:error, :already_started}
   end
 
-  @spec receive_bytes(t(), binary()) :: {:ok, t(), [effect()]} | {:error, term(), t()}
+  @spec receive_bytes(t(), binary()) ::
+          {:ok, t(), [effect()]} | {:error, term(), t()}
   def receive_bytes(%__MODULE__{} = state, chunk) when is_binary(chunk) do
-    {:ok, decoder, frames} = state.transport.feed(state.transport_decoder, chunk)
+    {:ok, decoder, frames} =
+      state.transport.feed(state.transport_decoder, chunk)
 
     frames
-    |> Enum.reduce_while({:ok, %{state | transport_decoder: decoder}, []}, fn frame,
-                                                                              {:ok, acc_state,
-                                                                               effects} ->
-      case handle_frame(acc_state, frame) do
-        {:ok, next_state, next_effects} ->
-          {:cont, {:ok, next_state, effects ++ next_effects}}
+    |> Enum.reduce_while(
+      {:ok, %{state | transport_decoder: decoder}, []},
+      fn frame, {:ok, acc_state, effects} ->
+        case handle_frame(acc_state, frame) do
+          {:ok, next_state, next_effects} ->
+            {:cont, {:ok, next_state, effects ++ next_effects}}
 
-        {:error, reason} ->
-          {:halt, {:error, reason, acc_state}}
+          {:error, reason} ->
+            {:halt, {:error, reason, acc_state}}
+        end
       end
-    end)
+    )
   end
 
   defp maybe_transport_prefix(%__MODULE__{transport_started?: true}), do: []
-  defp maybe_transport_prefix(%__MODULE__{transport: transport}), do: [{:send_bytes, transport.client_prefix()}]
+
+  defp maybe_transport_prefix(%__MODULE__{transport: transport}),
+    do: [{:send_bytes, transport.client_prefix()}]
 
   defp handle_frame(state, {:quick_ack, token}) do
     {:ok, state, [{:notify, {:quick_ack, token}}]}
   end
 
-  defp handle_frame(%__MODULE__{phase: :awaiting_res_pq, pending_nonce: nonce} = state, frame)
+  defp handle_frame(
+         %__MODULE__{phase: :awaiting_res_pq, pending_nonce: nonce} = state,
+         frame
+       )
        when is_binary(frame) do
     with {:ok, plain_message} <- PlainMessage.decode(frame),
          {:ok, res_pq} <- KeyExchange.decode_res_pq(plain_message.body),
@@ -127,7 +142,8 @@ defmodule MTProto.Core do
     end
   end
 
-  defp handle_frame(%__MODULE__{phase: phase} = state, frame) when is_binary(frame) do
+  defp handle_frame(%__MODULE__{phase: phase} = state, frame)
+       when is_binary(frame) do
     with {:ok, plain_message} <- PlainMessage.decode(frame) do
       {:ok, state, [{:notify, {:plain_message, phase, plain_message}}]}
     end

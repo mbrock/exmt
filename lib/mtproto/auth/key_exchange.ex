@@ -10,7 +10,8 @@ defmodule MTProto.Auth.KeyExchange do
   @res_pq 0x05162463
 
   @spec encode_req_pq_multi(binary()) :: binary()
-  def encode_req_pq_multi(nonce) when is_binary(nonce) and byte_size(nonce) == 16 do
+  def encode_req_pq_multi(nonce)
+      when is_binary(nonce) and byte_size(nonce) == 16 do
     <<@req_pq_multi::little-unsigned-32, nonce::binary>>
   end
 
@@ -19,7 +20,8 @@ defmodule MTProto.Auth.KeyExchange do
     with {:ok, nonce, rest} <- TL.decode_int128(rest),
          {:ok, server_nonce, rest} <- TL.decode_int128(rest),
          {:ok, pq, rest} <- TL.decode_bytes(rest),
-         {:ok, fingerprints, <<>>} <- TL.decode_vector(rest, &TL.decode_long/1) do
+         {:ok, fingerprints, <<>>} <-
+           TL.decode_vector(rest, &TL.decode_long/1) do
       {:ok,
        %ResPQ{
          nonce: nonce,

@@ -8,6 +8,7 @@ Current scope:
 
 - pure abridged transport framing
 - pure unencrypted MTProto message envelope codec
+- pure encrypted MTProto 2.0 payload and packet codec
 - pure auth bootstrap state machine for `req_pq_multi -> resPQ`
 - tests pinned to Telegram's official auth-key generation sample
 

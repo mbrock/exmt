@@ -6,16 +6,23 @@ defmodule MTProto.TL do
   @vector_constructor 0x1CB5C415
 
   @spec encode_long(non_neg_integer()) :: binary()
-  def encode_long(value) when is_integer(value) and value >= 0 and value <= 0xFFFF_FFFF_FFFF_FFFF do
+  def encode_long(value)
+      when is_integer(value) and value >= 0 and value <= 0xFFFF_FFFF_FFFF_FFFF do
     <<value::little-unsigned-64>>
   end
 
-  @spec decode_long(binary()) :: {:ok, non_neg_integer(), binary()} | {:error, term()}
-  def decode_long(<<value::little-unsigned-64, rest::binary>>), do: {:ok, value, rest}
+  @spec decode_long(binary()) ::
+          {:ok, non_neg_integer(), binary()} | {:error, term()}
+  def decode_long(<<value::little-unsigned-64, rest::binary>>),
+    do: {:ok, value, rest}
+
   def decode_long(_), do: {:error, :short_long}
 
-  @spec decode_int128(binary()) :: {:ok, binary(), binary()} | {:error, term()}
-  def decode_int128(<<value::binary-size(16), rest::binary>>), do: {:ok, value, rest}
+  @spec decode_int128(binary()) ::
+          {:ok, binary(), binary()} | {:error, term()}
+  def decode_int128(<<value::binary-size(16), rest::binary>>),
+    do: {:ok, value, rest}
+
   def decode_int128(_), do: {:error, :short_int128}
 
   @spec encode_bytes(binary()) :: binary()
@@ -27,7 +34,9 @@ defmodule MTProto.TL do
       <<size, value::binary, 0::size(padding)-unit(8)>>
     else
       padding = padding_size(4 + size)
-      <<254, size::little-unsigned-size(24), value::binary, 0::size(padding)-unit(8)>>
+
+      <<254, size::little-unsigned-size(24), value::binary,
+        0::size(padding)-unit(8)>>
     end
   end
 
@@ -39,7 +48,9 @@ defmodule MTProto.TL do
     if byte_size(rest) < needed do
       {:error, :short_tl_bytes}
     else
-      <<value::binary-size(size), _padding::binary-size(padding), tail::binary>> = rest
+      <<value::binary-size(size), _padding::binary-size(padding),
+        tail::binary>> = rest
+
       {:ok, value, tail}
     end
   end
@@ -51,7 +62,9 @@ defmodule MTProto.TL do
     if byte_size(rest) < needed do
       {:error, :short_tl_bytes}
     else
-      <<value::binary-size(size), _padding::binary-size(padding), tail::binary>> = rest
+      <<value::binary-size(size), _padding::binary-size(padding),
+        tail::binary>> = rest
+
       {:ok, value, tail}
     end
   end
@@ -59,15 +72,20 @@ defmodule MTProto.TL do
   def decode_bytes(_), do: {:error, :short_tl_bytes}
 
   @spec encode_vector(list(), (term() -> binary())) :: binary()
-  def encode_vector(items, encode_item) when is_list(items) and is_function(encode_item, 1) do
+  def encode_vector(items, encode_item)
+      when is_list(items) and is_function(encode_item, 1) do
     body = Enum.map_join(items, encode_item)
-    <<@vector_constructor::little-unsigned-32, length(items)::little-unsigned-32, body::binary>>
+
+    <<@vector_constructor::little-unsigned-32,
+      length(items)::little-unsigned-32, body::binary>>
   end
 
-  @spec decode_vector(binary(), (binary() -> {:ok, term(), binary()} | {:error, term()})) ::
+  @spec decode_vector(binary(), (binary() ->
+                                   {:ok, term(), binary()} | {:error, term()})) ::
           {:ok, list(), binary()} | {:error, term()}
   def decode_vector(
-        <<@vector_constructor::little-unsigned-32, count::little-unsigned-32, rest::binary>>,
+        <<@vector_constructor::little-unsigned-32, count::little-unsigned-32,
+          rest::binary>>,
         decode_item
       )
       when is_function(decode_item, 1) do
@@ -76,7 +94,8 @@ defmodule MTProto.TL do
 
   def decode_vector(_, _), do: {:error, :invalid_vector}
 
-  defp decode_vector_items(0, rest, _decode_item, items), do: {:ok, Enum.reverse(items), rest}
+  defp decode_vector_items(0, rest, _decode_item, items),
+    do: {:ok, Enum.reverse(items), rest}
 
   defp decode_vector_items(count, rest, decode_item, items) do
     with {:ok, item, rest} <- decode_item.(rest) do

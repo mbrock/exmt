@@ -70,15 +70,20 @@ defmodule MTProtoTest do
   end
 
   test "roundtrips the official sample plain request" do
-    {:ok, message} = PlainMessage.decode(MTProto.SampleAuthKey.plain_request())
+    {:ok, message} =
+      PlainMessage.decode(MTProto.SampleAuthKey.plain_request())
 
     assert message.message_id == 0x6777_E5EB_0005_9760
     assert message.body == MTProto.SampleAuthKey.req_pq_multi_body()
-    assert PlainMessage.encode(message) == MTProto.SampleAuthKey.plain_request()
+
+    assert PlainMessage.encode(message) ==
+             MTProto.SampleAuthKey.plain_request()
   end
 
   test "decodes the official sample res_pq response" do
-    {:ok, message} = PlainMessage.decode(MTProto.SampleAuthKey.plain_response())
+    {:ok, message} =
+      PlainMessage.decode(MTProto.SampleAuthKey.plain_response())
+
     {:ok, res_pq} = KeyExchange.decode_res_pq(message.body)
 
     assert res_pq == %ResPQ{
@@ -102,7 +107,9 @@ defmodule MTProtoTest do
     assert Abridged.client_prefix() == <<0xEF>>
 
     {:ok, decoder, []} = Abridged.feed(Abridged.new_decoder(), head)
-    {:ok, %Abridged.Decoder{buffer: <<>>}, [frame]} = Abridged.feed(decoder, tail)
+
+    {:ok, %Abridged.Decoder{buffer: <<>>}, [frame]} =
+      Abridged.feed(decoder, tail)
 
     assert frame == MTProto.SampleAuthKey.plain_request()
   end
@@ -130,7 +137,11 @@ defmodule MTProtoTest do
     state = MTProto.new()
 
     {:ok, state, effects} =
-      MTProto.begin_auth_key_exchange(state, 1_713_534_000_000_000_000, MTProto.SampleAuthKey.nonce())
+      MTProto.begin_auth_key_exchange(
+        state,
+        1_713_534_000_000_000_000,
+        MTProto.SampleAuthKey.nonce()
+      )
 
     assert state.phase == :awaiting_res_pq
     assert state.pending_nonce == MTProto.SampleAuthKey.nonce()
@@ -151,12 +162,15 @@ defmodule MTProtoTest do
                })
              )
 
-    {:ok, state, effects} = MTProto.receive_bytes(state, MTProto.SampleAuthKey.framed_response())
+    {:ok, state, effects} =
+      MTProto.receive_bytes(state, MTProto.SampleAuthKey.framed_response())
 
     assert state.phase == :awaiting_dh_params
     assert state.server_nonce == MTProto.SampleAuthKey.server_nonce()
 
-    assert [{:notify, {:res_pq, response_msg_id, %ResPQ{} = res_pq}}] = effects
+    assert [{:notify, {:res_pq, response_msg_id, %ResPQ{} = res_pq}}] =
+             effects
+
     assert response_msg_id == 0x6777_E5EB_D2FB_2801
     assert res_pq.nonce == MTProto.SampleAuthKey.nonce()
   end

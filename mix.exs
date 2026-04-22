@@ -8,8 +8,13 @@ defmodule Exmt.MixProject do
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      aliases: aliases(),
-      preferred_cli_env: [precommit: :test]
+      aliases: aliases()
+    ]
+  end
+
+  def cli do
+    [
+      preferred_envs: [precommit: :test]
     ]
   end
 

@@ -9,7 +9,8 @@ defmodule MTProto.MessageId do
   @spec next(non_neg_integer() | nil, non_neg_integer()) :: non_neg_integer()
   def next(nil, now_ns), do: from_nanoseconds(now_ns)
 
-  def next(last_msg_id, now_ns) when is_integer(last_msg_id) and last_msg_id >= 0 do
+  def next(last_msg_id, now_ns)
+      when is_integer(last_msg_id) and last_msg_id >= 0 do
     max(from_nanoseconds(now_ns), last_msg_id + 4)
   end
 
