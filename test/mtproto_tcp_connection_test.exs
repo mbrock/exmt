@@ -7,6 +7,7 @@ defmodule MTProto.TCPConnectionTest do
     API,
     EncryptedPacket,
     PlainMessage,
+    SessionData,
     TCPConnection,
     TL,
     Transport.Abridged
@@ -117,6 +118,10 @@ defmodule MTProto.TCPConnectionTest do
     assert_receive {:mtproto, ^connection,
                     {:msgs_ack_sent, ack_msg_id, [7_000]}}
 
+    assert_receive {:mtproto, ^connection,
+                    {:session_data_updated,
+                     %SessionData{server_salt: 555} = session_data}}
+
     assert {:ok, ack_payload} = decode_transport_frame(ack_packet)
 
     assert {:ok, ack_plaintext} =
@@ -129,8 +134,60 @@ defmodule MTProto.TCPConnectionTest do
     assert ack_plaintext.salt == 555
     assert ack_plaintext.seq_no == 0
     assert ack_plaintext.body == msgs_ack_body([7_000])
+    assert session_data.auth_key_data == result.auth_key.data
+    assert session_data.time_offset == result.time_offset
 
     assert_receive {:fake_socket, :setopts, ^socket, [active: :once]}
+  end
+
+  test "TCP connection can restore an encrypted session from session data" do
+    session_data = sample_session_data(dc_id: 2)
+
+    {:ok, connection} =
+      TCPConnection.start_link(
+        host: ~c"149.154.167.50",
+        port: 443,
+        session_data: session_data,
+        socket_mod: FakeSocket,
+        socket_opts: [test_pid: self()],
+        notify_to: self(),
+        session_id: 123,
+        now_ns_fun: fn -> 1_713_534_000_000_000_000 end
+      )
+
+    socket = {:fake_socket, self()}
+
+    assert_receive {:fake_socket, :connect, ~c"149.154.167.50", 443, _opts}
+    assert_receive {:fake_socket, :setopts, ^socket, [active: :once]}
+
+    assert_receive {:mtproto, ^connection,
+                    {:session_data_updated, ^session_data}}
+
+    assert_receive {:mtproto, ^connection, {:session_ready, 123}}
+
+    assert {:error, :session_already_ready} =
+             TCPConnection.begin_auth_key_exchange(connection)
+
+    assert :ok =
+             TCPConnection.ping(connection, 99,
+               padding_bytes: :binary.copy(<<0xAA>>, 64)
+             )
+
+    assert_receive {:fake_socket, :send, ^socket, <<0xEF>>}
+    assert_receive {:fake_socket, :send, ^socket, ping_packet}
+
+    assert {:ok, ping_payload} = decode_transport_frame(ping_packet)
+
+    assert {:ok, decoded_ping_packet} =
+             EncryptedPacket.decode(
+               ping_payload,
+               SessionData.auth_key(session_data),
+               sender: :client,
+               session_id: 123
+             )
+
+    assert decoded_ping_packet.salt == session_data.server_salt
+    assert decoded_ping_packet.body == ping_body(99)
   end
 
   test "TCP connection sends raw RPC requests and correlates rpc_result" do
@@ -443,6 +500,10 @@ defmodule MTProto.TCPConnectionTest do
     assert body == MTProto.AuthExchangeSample.step3_response()
 
     assert_receive {:mtproto, ^connection, {:auth_key_created, result}}
+
+    assert_receive {:mtproto, ^connection,
+                    {:session_data_updated, session_data}}
+
     assert_receive {:mtproto, ^connection, {:session_ready, 123}}
 
     assert result.auth_key.data ==
@@ -454,6 +515,28 @@ defmodule MTProto.TCPConnectionTest do
     assert result.time_offset ==
              MTProto.AuthExchangeSample.expected_time_offset()
 
+    assert session_data ==
+             SessionData.new!(
+               auth_key_data: result.auth_key.data,
+               server_salt: result.server_salt,
+               time_offset: result.time_offset,
+               dc_id: 0
+             )
+
     %{connection: connection, socket: socket, result: result}
+  end
+
+  defp sample_session_data(opts) do
+    SessionData.new!(
+      Keyword.merge(
+        [
+          auth_key_data: MTProto.AuthExchangeSample.expected_auth_key(),
+          server_salt: MTProto.AuthExchangeSample.expected_server_salt(),
+          time_offset: MTProto.AuthExchangeSample.expected_time_offset(),
+          dc_id: 0
+        ],
+        opts
+      )
+    )
   end
 end

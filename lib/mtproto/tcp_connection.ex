@@ -18,7 +18,7 @@ defmodule MTProto.TCPConnection do
 
   alias MTProto.API
   alias MTProto.Auth.KeyExchange
-  alias MTProto.{MessageId, PlainMessage, Session}
+  alias MTProto.{MessageId, PlainMessage, Session, SessionData}
   alias MTProto.Socket.GenTCP
   alias MTProto.Transport.Abridged
 
@@ -113,40 +113,56 @@ defmodule MTProto.TCPConnection do
   def init(opts) do
     host = Keyword.fetch!(opts, :host)
     port = Keyword.fetch!(opts, :port)
-    public_keys = Keyword.fetch!(opts, :public_keys)
+    public_keys = Keyword.get(opts, :public_keys, [])
     socket_mod = Keyword.get(opts, :socket_mod, GenTCP)
     socket_opts = Keyword.get(opts, :socket_opts, default_socket_opts())
     transport = Keyword.get(opts, :transport, Abridged)
+    session_id = Keyword.get_lazy(opts, :session_id, &random_session_id/0)
+    last_msg_id = Keyword.get(opts, :last_msg_id)
+    dc_id = Keyword.get_lazy(opts, :dc_id, fn -> default_dc_id(opts) end)
 
     with {:ok, socket} <- socket_mod.connect(host, port, socket_opts),
-         :ok <- socket_mod.setopts(socket, active: :once) do
-      {:ok,
-       %__MODULE__{
-         socket: socket,
-         socket_mod: socket_mod,
-         transport: transport,
-         transport_decoder: transport.new_decoder(),
-         key_exchange: KeyExchange.new(),
-         session_id:
-           Keyword.get_lazy(opts, :session_id, &random_session_id/0),
-         public_keys: public_keys,
-         notify_to: Keyword.get(opts, :notify_to, self()),
-         dc_id: Keyword.get(opts, :dc_id, 0),
-         pq_inner_data_mode: Keyword.get(opts, :pq_inner_data_mode, :bare),
-         random_bytes_chunks: Keyword.get(opts, :random_bytes_chunks, []),
-         now_ns_fun:
-           Keyword.get(opts, :now_ns_fun, fn ->
-             System.os_time(:nanosecond)
-           end),
-         now_sec_fun:
-           Keyword.get(opts, :now_sec_fun, fn ->
-             System.system_time(:second)
-           end)
-       }}
+         :ok <- socket_mod.setopts(socket, active: :once),
+         {:ok, session} <-
+           build_initial_session(opts, session_id, last_msg_id),
+         {:ok, state} <-
+           init_state(
+             socket,
+             socket_mod,
+             transport,
+             public_keys,
+             opts,
+             session,
+             session_id,
+             last_msg_id,
+             dc_id
+           ) do
+      case durable_session_data(state) do
+        %SessionData{} = session_data ->
+          {:ok, state, {:continue, {:notify_session_ready, session_data}}}
+
+        :error ->
+          {:ok, state}
+      end
     end
   end
 
   @impl true
+  def handle_continue({:notify_session_ready, session_data}, state) do
+    notify(state, {:session_data_updated, session_data})
+    notify(state, {:session_ready, state.session.session_id})
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_call(
+        {:begin_auth_key_exchange, _opts},
+        _from,
+        %__MODULE__{session: %Session{}} = state
+      ) do
+    {:reply, {:error, :session_already_ready}, state}
+  end
+
   def handle_call({:begin_auth_key_exchange, opts}, _from, state) do
     nonce =
       Keyword.get_lazy(opts, :nonce, fn -> :crypto.strong_rand_bytes(16) end)
@@ -295,7 +311,7 @@ defmodule MTProto.TCPConnection do
            ),
          {:ok, state} <-
            execute_effects(%{state | session: next_session}, effects) do
-      {:ok, state}
+      {:ok, maybe_notify_session_data_change(state, session)}
     end
   end
 
@@ -398,12 +414,13 @@ defmodule MTProto.TCPConnection do
   end
 
   defp execute_effect(state, {:notify, {:auth_key_created, result} = event}) do
-    with {:ok, session} <-
-           Session.new(result,
-             session_id: state.session_id,
-             last_msg_id: state.last_msg_id
+    with {:ok, session} <- new_session(state, result),
+         {:ok, session_data} <-
+           SessionData.from_exchange_result(result,
+             dc_id: state.dc_id
            ) do
       notify(state, event)
+      notify(state, {:session_data_updated, session_data})
       notify(state, {:session_ready, session.session_id})
       {:ok, %{state | session: session}}
     end
@@ -472,6 +489,107 @@ defmodule MTProto.TCPConnection do
 
   defp default_socket_opts do
     [:binary, packet: :raw, active: false, nodelay: true]
+  end
+
+  defp default_dc_id(opts) do
+    case Keyword.fetch(opts, :session_data) do
+      {:ok, %SessionData{dc_id: dc_id}} -> dc_id
+      _ -> 0
+    end
+  end
+
+  defp init_state(
+         socket,
+         socket_mod,
+         transport,
+         public_keys,
+         opts,
+         session,
+         session_id,
+         last_msg_id,
+         dc_id
+       ) do
+    {:ok,
+     %__MODULE__{
+       socket: socket,
+       socket_mod: socket_mod,
+       transport: transport,
+       transport_decoder: transport.new_decoder(),
+       key_exchange: KeyExchange.new(),
+       session: session,
+       session_id: session_id,
+       public_keys: public_keys,
+       notify_to: Keyword.get(opts, :notify_to, self()),
+       last_msg_id: last_msg_id,
+       dc_id: dc_id,
+       pq_inner_data_mode: Keyword.get(opts, :pq_inner_data_mode, :bare),
+       random_bytes_chunks: Keyword.get(opts, :random_bytes_chunks, []),
+       now_ns_fun:
+         Keyword.get(opts, :now_ns_fun, fn ->
+           System.os_time(:nanosecond)
+         end),
+       now_sec_fun:
+         Keyword.get(opts, :now_sec_fun, fn ->
+           System.system_time(:second)
+         end)
+     }}
+  end
+
+  defp build_initial_session(opts, session_id, last_msg_id) do
+    case Keyword.fetch(opts, :session_data) do
+      {:ok, %SessionData{} = session_data} ->
+        Session.new(
+          SessionData.to_session_opts(session_data,
+            session_id: session_id,
+            last_msg_id: last_msg_id
+          )
+        )
+
+      {:ok, _session_data} ->
+        {:error, :invalid_session_data}
+
+      :error ->
+        {:ok, nil}
+    end
+  end
+
+  defp new_session(state, result) do
+    Session.new(result,
+      session_id: state.session_id,
+      last_msg_id: state.last_msg_id
+    )
+  end
+
+  defp maybe_notify_session_data_change(
+         %__MODULE__{session: %Session{} = next_session} = state,
+         %Session{} = previous_session
+       ) do
+    previous = durable_session_data(previous_session, state.dc_id)
+    current = durable_session_data(next_session, state.dc_id)
+
+    if current != previous do
+      notify(state, {:session_data_updated, current})
+    end
+
+    state
+  end
+
+  defp maybe_notify_session_data_change(state, _previous_session), do: state
+
+  defp durable_session_data(%__MODULE__{
+         session: %Session{} = session,
+         dc_id: dc_id
+       }) do
+    durable_session_data(session, dc_id)
+  end
+
+  defp durable_session_data(%__MODULE__{}), do: :error
+
+  defp durable_session_data(%Session{} = session, dc_id) do
+    case SessionData.from_session(session, dc_id: dc_id) do
+      {:ok, session_data} -> session_data
+      {:error, _reason} -> :error
+    end
   end
 
   defp random_session_id do
