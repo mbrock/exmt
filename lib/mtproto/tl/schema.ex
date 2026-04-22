@@ -1,6 +1,6 @@
 defmodule MTProto.TL.Schema do
   @moduledoc """
-  Normalized TL schema representation used for code generation.
+  Normalized TL schema representation.
   """
 
   defmodule Schema do
@@ -16,7 +16,6 @@ defmodule MTProto.TL.Schema do
               kind: nil,
               tl_name: nil,
               id: nil,
-              module: nil,
               generics: [],
               params: [],
               result_type: nil,

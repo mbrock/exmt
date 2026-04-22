@@ -7,13 +7,11 @@ defmodule MTProto.TL.Runtime do
 
   alias MTProto.TL
   alias MTProto.TL.VendoredSchema
-  alias MTProto.TL.{Normalize, Parser}
   alias MTProto.TL.Schema.Definition
   alias MTProto.TL.Schema.Param
   alias MTProto.TL.Schema.TypeExpr
 
   @default_schema_names [:mtproto_api, :telegram_api]
-  @schemas_dir Path.expand("priv/tl", File.cwd!())
 
   defmodule Decoded do
     @moduledoc false
@@ -403,7 +401,10 @@ defmodule MTProto.TL.Runtime do
       |> Enum.filter(&(&1.kind == :constructor))
 
     %{
-      by_id: Map.new(definitions, &{&1.id, &1}),
+      by_id:
+        definitions
+        |> Enum.reject(&is_nil(&1.id))
+        |> Map.new(&{&1.id, &1}),
       bare_by_name:
         definitions
         |> Enum.filter(&bare_constructor?/1)
@@ -412,24 +413,13 @@ defmodule MTProto.TL.Runtime do
   end
 
   defp load_schema_definitions(schema_name) do
-    cond do
-      VendoredSchema.available?(schema_name) ->
-        {:ok, normalized_schema} = VendoredSchema.load(schema_name)
+    case VendoredSchema.load(schema_name) do
+      {:ok, normalized_schema} ->
         normalized_schema.definitions
 
-      true ->
-        schema_path = tl_schema_path(schema_name)
-        {:ok, parsed_schema} = Parser.parse_file(schema_path)
-
-        normalized_schema =
-          Normalize.normalize(parsed_schema, name: schema_name)
-
-        normalized_schema.definitions
+      {:error, {:unknown_schema, ^schema_name}} ->
+        raise ArgumentError, "schema #{inspect(schema_name)} is not vendored"
     end
-  end
-
-  defp tl_schema_path(schema_name) do
-    Path.join(@schemas_dir, "#{schema_name}.tl")
   end
 
   defp bare_constructor?(%Definition{tl_name: tl_name}) do
