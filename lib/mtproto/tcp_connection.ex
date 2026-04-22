@@ -16,6 +16,7 @@ defmodule MTProto.TCPConnection do
 
   use GenServer
 
+  alias MTProto.API
   alias MTProto.Auth.KeyExchange
   alias MTProto.{MessageId, PlainMessage, Session}
   alias MTProto.Socket.GenTCP
@@ -84,6 +85,28 @@ defmodule MTProto.TCPConnection do
           {:ok, non_neg_integer()} | {:error, term()}
   def invoke(server, body, opts \\ []) do
     GenServer.call(server, {:invoke, body, opts})
+  end
+
+  @spec invoke_api(GenServer.server(), binary(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def invoke_api(server, query, opts \\ []) do
+    with {:ok, wrapped_query} <- API.wrap_request(query, opts) do
+      invoke(
+        server,
+        wrapped_query,
+        Keyword.put_new(opts, :request, :api_request)
+      )
+    end
+  end
+
+  @spec get_config(GenServer.server(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def get_config(server, opts \\ []) do
+    invoke_api(
+      server,
+      API.help_get_config(),
+      Keyword.put_new(opts, :request, :help_get_config)
+    )
   end
 
   @impl true
