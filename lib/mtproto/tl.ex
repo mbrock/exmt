@@ -31,6 +31,20 @@ defmodule MTProto.TL do
 
   def decode_long(_), do: {:error, :short_long}
 
+  @spec encode_signed_long(integer()) :: binary()
+  def encode_signed_long(value)
+      when is_integer(value) and value >= -0x8000_0000_0000_0000 and
+             value <= 0x7FFF_FFFF_FFFF_FFFF do
+    <<value::little-signed-64>>
+  end
+
+  @spec decode_signed_long(binary()) ::
+          {:ok, integer(), binary()} | {:error, term()}
+  def decode_signed_long(<<value::little-signed-64, rest::binary>>),
+    do: {:ok, value, rest}
+
+  def decode_signed_long(_), do: {:error, :short_long}
+
   @spec encode_int128(binary()) :: binary()
   def encode_int128(value) when is_binary(value) and byte_size(value) == 16,
     do: value

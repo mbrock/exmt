@@ -1,7 +1,7 @@
 defmodule MTProto.Connection do
-  @moduledoc deprecated: "Use MTProto.Auth.TCPConnection instead."
+  @moduledoc deprecated: "Use MTProto.TCPConnection instead."
 
-  alias MTProto.Auth.TCPConnection
+  alias MTProto.TCPConnection
 
   @spec start_link(keyword()) :: GenServer.on_start()
   defdelegate start_link(opts), to: TCPConnection
@@ -9,4 +9,8 @@ defmodule MTProto.Connection do
   @spec begin_auth_key_exchange(GenServer.server(), keyword()) ::
           :ok | {:error, term()}
   defdelegate begin_auth_key_exchange(server, opts \\ []), to: TCPConnection
+
+  @spec ping(GenServer.server(), integer(), keyword()) ::
+          :ok | {:error, term()}
+  defdelegate ping(server, ping_id, opts \\ []), to: TCPConnection
 end
