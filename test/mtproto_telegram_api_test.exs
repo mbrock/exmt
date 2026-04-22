@@ -1,7 +1,7 @@
-defmodule MTProto.APITest do
+defmodule MTProto.Telegram.APITest do
   use ExUnit.Case, async: true
 
-  alias MTProto.API
+  alias MTProto.Telegram.API
   alias MTProto.TL
 
   test "wraps help.getConfig in initConnection and invokeWithLayer" do

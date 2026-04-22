@@ -1,10 +1,10 @@
-defmodule MTProto.API do
+defmodule MTProto.Telegram.API do
   @moduledoc """
   Small hand-written Telegram API request wrappers.
 
-  We intentionally keep this layer tiny and explicit instead of generating the
-  entire Telegram API surface. These helpers only build the outer request
-  envelopes we need right now.
+  This layer is intentionally separate from the MTProto transport/session
+  client. It knows about Telegram API envelopes and a very small set of
+  Telegram methods we currently care about.
   """
 
   alias MTProto.TL

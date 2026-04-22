@@ -1,4 +1,4 @@
-defmodule MTProto.API.Result do
+defmodule MTProto.Telegram.Result do
   @moduledoc """
   Schema-driven decoding helpers for raw Telegram API results.
   """

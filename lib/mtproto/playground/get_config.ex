@@ -1,8 +1,10 @@
 defmodule MTProto.Playground.GetConfig do
   @moduledoc false
 
-  alias MTProto.{API, Client, SessionData, TelegramKeys}
+  alias MTProto.{SessionData, TelegramKeys}
   alias MTProto.SessionStore.File, as: FileStore
+  alias MTProto.Telegram.API
+  alias MTProto.Telegram.Client, as: TelegramClient
   alias MTProto.TL.Runtime.Decoded
 
   @default_timeout 30_000
@@ -208,14 +210,14 @@ defmodule MTProto.Playground.GetConfig do
           client_opts
       end
 
-    case Client.start_link(client_opts) do
+    case TelegramClient.start_link(client_opts) do
       {:ok, client} ->
         try do
           with :ok <- maybe_begin_auth_key_exchange(client, session_data),
                {:ok, session_id} <-
                  wait_for_session_ready(client, timeout, verbose?),
                {:ok, request_id} <-
-                 Client.get_config(client,
+                 TelegramClient.get_config(client,
                    api_id: api_id,
                    request: :help_get_config
                  ),
@@ -242,7 +244,7 @@ defmodule MTProto.Playground.GetConfig do
   defp maybe_begin_auth_key_exchange(_client, %SessionData{}), do: :ok
 
   defp maybe_begin_auth_key_exchange(client, nil),
-    do: Client.begin_auth_key_exchange(client)
+    do: TelegramClient.begin_auth_key_exchange(client)
 
   defp wait_for_session_ready(client, timeout, verbose?) do
     deadline = now_ms() + timeout
@@ -273,12 +275,12 @@ defmodule MTProto.Playground.GetConfig do
 
   defp wait_for_rpc_result_until(client, request_id, deadline, verbose?) do
     receive do
-      {:mtproto, ^client,
+      {:telegram, ^client,
        {:rpc_request_result_decoded, ^request_id, :help_get_config, _result,
         decoded}} ->
         {:ok, %{kind: :decoded, decoded: decoded}}
 
-      {:mtproto, ^client,
+      {:telegram, ^client,
        {:rpc_request_result_decode_error, ^request_id, :help_get_config,
         _result_type, reason}} ->
         {:error, {:rpc_result_decode_error, reason}}

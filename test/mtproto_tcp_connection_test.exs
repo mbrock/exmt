@@ -4,7 +4,6 @@ defmodule MTProto.TCPConnectionTest do
   alias MTProto.Auth.PublicKey
 
   alias MTProto.{
-    API,
     EncryptedPacket,
     PlainMessage,
     SessionData,
@@ -268,73 +267,6 @@ defmodule MTProto.TCPConnectionTest do
     assert ack_plaintext.message_id == ack_msg_id
     assert ack_plaintext.seq_no == 2
     assert ack_plaintext.body == msgs_ack_body([8_000])
-  end
-
-  test "TCP connection builds and sends help.getConfig API calls" do
-    %{connection: connection, socket: socket, result: result} =
-      start_authenticated_connection()
-
-    opts = [
-      api_id: 12345,
-      device_model: "exmt-dev",
-      system_version: "OTP test",
-      app_version: "0.1.0-test",
-      system_lang_code: "en",
-      lang_pack: "",
-      lang_code: "en",
-      layer: 214,
-      padding_bytes: :binary.copy(<<0xAA>>, 64)
-    ]
-
-    assert {:ok, request_id} = TCPConnection.get_config(connection, opts)
-    assert_receive {:fake_socket, :send, ^socket, request_packet}
-
-    assert_receive {:mtproto, ^connection,
-                    {:encrypted_packet_sent, sent_packet}}
-
-    assert_receive {:mtproto, ^connection,
-                    {:session_message_sent, ^request_id, 1, request_body}}
-
-    assert_receive {:mtproto, ^connection,
-                    {:rpc_request_sent, ^request_id, :help_get_config}}
-
-    assert {:ok, expected_body} =
-             API.wrap_request(API.help_get_config(), opts)
-
-    assert request_body == expected_body
-
-    assert {:ok, request_payload} = decode_transport_frame(request_packet)
-
-    assert {:ok, decoded_request_packet} =
-             EncryptedPacket.decode(request_payload, result.auth_key,
-               sender: :client,
-               session_id: 123
-             )
-
-    assert decoded_request_packet == sent_packet
-    assert decoded_request_packet.body == expected_body
-
-    response_body = <<0xCC, 0xBB, 0xAA, 0x99>>
-
-    assert {:ok, server_payload} =
-             EncryptedPacket.encode(
-               %EncryptedPacket{
-                 salt: result.server_salt,
-                 session_id: 123,
-                 message_id: 9_000,
-                 seq_no: 1,
-                 body: rpc_result_body(request_id, response_body)
-               },
-               result.auth_key,
-               sender: :server,
-               padding_bytes: :binary.copy(<<0xBB>>, 64)
-             )
-
-    send(connection, {:tcp, socket, Abridged.encode(server_payload)})
-
-    assert_receive {:mtproto, ^connection,
-                    {:rpc_request_result, ^request_id, :help_get_config,
-                     ^response_body}}
   end
 
   defp encode_plain_frame(body, message_id) do

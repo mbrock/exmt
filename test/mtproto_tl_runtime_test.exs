@@ -1,7 +1,7 @@
 defmodule MTProto.TL.RuntimeTest do
   use ExUnit.Case, async: true
 
-  alias MTProto.API.Result
+  alias MTProto.Telegram.Result
   alias MTProto.TL
   alias MTProto.TL.Runtime
   alias MTProto.TL.Runtime.Decoded
