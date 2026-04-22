@@ -12,6 +12,9 @@ defmodule MTProto.API do
   @invoke_with_layer 0xDA9B0D0D
   @init_connection 0xC1CD5EA9
   @help_get_config 0xC4F9186B
+  @code_settings 0xAD253D78
+  @auth_send_code 0xA677244F
+  @auth_sign_in 0x8D52A951
 
   @default_layer 214
   @default_device_model "exmt"
@@ -24,6 +27,84 @@ defmodule MTProto.API do
 
   @spec help_get_config() :: binary()
   def help_get_config, do: <<@help_get_config::little-unsigned-32>>
+
+  @spec code_settings(keyword()) :: {:ok, binary()} | {:error, term()}
+  def code_settings(opts \\ []) when is_list(opts) do
+    with {:ok, allow_flashcall} <-
+           fetch_boolean_opt(opts, :allow_flashcall, false),
+         {:ok, current_number} <-
+           fetch_boolean_opt(opts, :current_number, false),
+         {:ok, allow_app_hash} <-
+           fetch_boolean_opt(opts, :allow_app_hash, false),
+         {:ok, allow_missed_call} <-
+           fetch_boolean_opt(opts, :allow_missed_call, false),
+         {:ok, allow_firebase} <-
+           fetch_boolean_opt(opts, :allow_firebase, false),
+         {:ok, unknown_number} <-
+           fetch_boolean_opt(opts, :unknown_number, false),
+         {:ok, logout_tokens} <-
+           fetch_optional_binary_list_opt(opts, :logout_tokens),
+         {:ok, token} <- fetch_optional_binary_opt(opts, :token),
+         {:ok, app_sandbox} <-
+           fetch_optional_boolean_opt(opts, :app_sandbox),
+         :ok <- validate_code_settings_token(token, app_sandbox) do
+      flags =
+        0
+        |> put_flag(0, allow_flashcall)
+        |> put_flag(1, current_number)
+        |> put_flag(4, allow_app_hash)
+        |> put_flag(5, allow_missed_call)
+        |> put_flag(6, not is_nil(logout_tokens))
+        |> put_flag(7, allow_firebase)
+        |> put_flag(8, not is_nil(token))
+        |> put_flag(9, unknown_number)
+
+      encoded =
+        [
+          <<@code_settings::little-unsigned-32>>,
+          TL.encode_int(flags),
+          maybe_encode_logout_tokens(logout_tokens),
+          maybe_encode_token(token, app_sandbox)
+        ]
+        |> IO.iodata_to_binary()
+
+      {:ok, encoded}
+    end
+  end
+
+  @spec auth_send_code(binary(), binary(), keyword()) ::
+          {:ok, binary()} | {:error, term()}
+  def auth_send_code(phone_number, api_hash, opts \\ []) do
+    with {:ok, phone_number} <-
+           validate_binary_arg(phone_number, :phone_number),
+         {:ok, api_id} <- fetch_integer_opt(opts, :api_id),
+         {:ok, api_hash} <- validate_binary_arg(api_hash, :api_hash),
+         {:ok, settings} <- code_settings(Keyword.get(opts, :settings, [])) do
+      {:ok,
+       <<@auth_send_code::little-unsigned-32,
+         TL.encode_bytes(phone_number)::binary, TL.encode_int(api_id)::binary,
+         TL.encode_bytes(api_hash)::binary, settings::binary>>}
+    end
+  end
+
+  @spec auth_sign_in(binary(), binary(), binary(), keyword()) ::
+          {:ok, binary()} | {:error, term()}
+  def auth_sign_in(phone_number, phone_code_hash, phone_code, opts \\ []) do
+    with {:ok, phone_number} <-
+           validate_binary_arg(phone_number, :phone_number),
+         {:ok, phone_code_hash} <-
+           validate_binary_arg(phone_code_hash, :phone_code_hash),
+         {:ok, phone_code} <- validate_binary_arg(phone_code, :phone_code),
+         :ok <- validate_unsupported_opt(opts, :email_verification) do
+      flags = 1
+
+      {:ok,
+       <<@auth_sign_in::little-unsigned-32, TL.encode_int(flags)::binary,
+         TL.encode_bytes(phone_number)::binary,
+         TL.encode_bytes(phone_code_hash)::binary,
+         TL.encode_bytes(phone_code)::binary>>}
+    end
+  end
 
   @spec wrap_request(binary(), keyword()) ::
           {:ok, binary()} | {:error, term()}
@@ -99,6 +180,87 @@ defmodule MTProto.API do
       :error -> {:error, {:missing_option, key}}
     end
   end
+
+  defp fetch_boolean_opt(opts, key, default) when is_boolean(default) do
+    case Keyword.fetch(opts, key) do
+      {:ok, value} when is_boolean(value) -> {:ok, value}
+      {:ok, _value} -> {:error, {:invalid_option, key}}
+      :error -> {:ok, default}
+    end
+  end
+
+  defp fetch_optional_binary_opt(opts, key) do
+    case Keyword.fetch(opts, key) do
+      {:ok, value} when is_binary(value) -> {:ok, value}
+      {:ok, nil} -> {:ok, nil}
+      {:ok, _value} -> {:error, {:invalid_option, key}}
+      :error -> {:ok, nil}
+    end
+  end
+
+  defp fetch_optional_boolean_opt(opts, key) do
+    case Keyword.fetch(opts, key) do
+      {:ok, value} when is_boolean(value) -> {:ok, value}
+      {:ok, nil} -> {:ok, nil}
+      {:ok, _value} -> {:error, {:invalid_option, key}}
+      :error -> {:ok, nil}
+    end
+  end
+
+  defp fetch_optional_binary_list_opt(opts, key) do
+    case Keyword.fetch(opts, key) do
+      {:ok, values} when is_list(values) ->
+        if Enum.all?(values, &is_binary/1) do
+          {:ok, values}
+        else
+          {:error, {:invalid_option, key}}
+        end
+
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, _value} ->
+        {:error, {:invalid_option, key}}
+
+      :error ->
+        {:ok, nil}
+    end
+  end
+
+  defp validate_binary_arg(value, _name) when is_binary(value),
+    do: {:ok, value}
+
+  defp validate_binary_arg(_value, name),
+    do: {:error, {:invalid_argument, name}}
+
+  defp validate_code_settings_token(nil, nil), do: :ok
+
+  defp validate_code_settings_token(nil, _app_sandbox),
+    do: {:error, {:invalid_option, :token}}
+
+  defp validate_code_settings_token(_token, _app_sandbox), do: :ok
+
+  defp validate_unsupported_opt(opts, key) do
+    case Keyword.has_key?(opts, key) do
+      true -> {:error, {:unsupported_option, key}}
+      false -> :ok
+    end
+  end
+
+  defp maybe_encode_logout_tokens(nil), do: []
+
+  defp maybe_encode_logout_tokens(logout_tokens) do
+    TL.encode_vector(logout_tokens, &TL.encode_bytes/1)
+  end
+
+  defp maybe_encode_token(nil, _app_sandbox), do: []
+
+  defp maybe_encode_token(token, app_sandbox) do
+    [TL.encode_bytes(token), TL.encode_bool(app_sandbox || false)]
+  end
+
+  defp put_flag(flags, _bit, false), do: flags
+  defp put_flag(flags, bit, true), do: Bitwise.bor(flags, Bitwise.bsl(1, bit))
 
   defp default_system_version do
     "OTP " <> System.otp_release()

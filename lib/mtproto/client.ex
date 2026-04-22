@@ -14,6 +14,8 @@ defmodule MTProto.Client do
 
   use GenServer
 
+  alias MTProto.API
+  alias MTProto.API.Result
   alias MTProto.{SessionData, TCPConnection}
 
   @client_opts [
@@ -30,10 +32,17 @@ defmodule MTProto.Client do
           connection: pid(),
           notify_to: pid(),
           session_store: session_store(),
-          session_data: SessionData.t() | nil
+          session_data: SessionData.t() | nil,
+          pending_results: %{optional(non_neg_integer()) => binary()}
         }
 
-  defstruct [:connection, :notify_to, :session_store, :session_data]
+  defstruct [
+    :connection,
+    :notify_to,
+    :session_store,
+    :session_data,
+    pending_results: %{}
+  ]
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -70,6 +79,21 @@ defmodule MTProto.Client do
     GenServer.call(server, {:get_config, opts})
   end
 
+  @spec send_code(GenServer.server(), binary(), binary(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def send_code(server, phone_number, api_hash, opts \\ []) do
+    GenServer.call(server, {:send_code, phone_number, api_hash, opts})
+  end
+
+  @spec sign_in(GenServer.server(), binary(), binary(), binary(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def sign_in(server, phone_number, phone_code_hash, phone_code, opts \\ []) do
+    GenServer.call(
+      server,
+      {:sign_in, phone_number, phone_code_hash, phone_code, opts}
+    )
+  end
+
   @spec session_data(GenServer.server()) :: SessionData.t() | nil
   def session_data(server) do
     GenServer.call(server, :session_data)
@@ -90,7 +114,8 @@ defmodule MTProto.Client do
          connection: connection,
          notify_to: notify_to,
          session_store: session_store,
-         session_data: session_data
+         session_data: session_data,
+         pending_results: %{}
        }}
     end
   end
@@ -106,15 +131,69 @@ defmodule MTProto.Client do
   end
 
   def handle_call({:invoke, body, opts}, _from, state) do
-    {:reply, TCPConnection.invoke(state.connection, body, opts), state}
+    invoke_with_tracking(state, opts, fn ->
+      TCPConnection.invoke(state.connection, body, opts)
+    end)
   end
 
   def handle_call({:invoke_api, query, opts}, _from, state) do
-    {:reply, TCPConnection.invoke_api(state.connection, query, opts), state}
+    invoke_with_tracking(state, opts, fn ->
+      TCPConnection.invoke_api(state.connection, query, opts)
+    end)
   end
 
   def handle_call({:get_config, opts}, _from, state) do
-    {:reply, TCPConnection.get_config(state.connection, opts), state}
+    opts = Keyword.put_new(opts, :result_type, "Config")
+
+    invoke_with_tracking(state, opts, fn ->
+      TCPConnection.get_config(state.connection, opts)
+    end)
+  end
+
+  def handle_call({:send_code, phone_number, api_hash, opts}, _from, state) do
+    opts =
+      opts
+      |> Keyword.put_new(:request, :auth_send_code)
+      |> Keyword.put_new(:result_type, "auth.SentCode")
+
+    with {:ok, result_type} <- normalize_result_type(opts),
+         {:ok, query} <- API.auth_send_code(phone_number, api_hash, opts) do
+      track_result_type_reply(
+        TCPConnection.invoke_api(state.connection, query, opts),
+        state,
+        result_type
+      )
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call(
+        {:sign_in, phone_number, phone_code_hash, phone_code, opts},
+        _from,
+        state
+      ) do
+    opts =
+      opts
+      |> Keyword.put_new(:request, :auth_sign_in)
+      |> Keyword.put_new(:result_type, "auth.Authorization")
+
+    with {:ok, result_type} <- normalize_result_type(opts),
+         {:ok, query} <-
+           API.auth_sign_in(
+             phone_number,
+             phone_code_hash,
+             phone_code,
+             opts
+           ) do
+      track_result_type_reply(
+        TCPConnection.invoke_api(state.connection, query, opts),
+        state,
+        result_type
+      )
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
   end
 
   def handle_call(:session_data, _from, state) do
@@ -140,6 +219,26 @@ defmodule MTProto.Client do
       end
 
     {:noreply, state}
+  end
+
+  def handle_info(
+        {:mtproto, connection, {:rpc_result, request_id, result} = event},
+        %__MODULE__{connection: connection} = state
+      ) do
+    notify(state, event)
+    maybe_notify_decoded_result(state, request_id, result)
+    {:noreply, state}
+  end
+
+  def handle_info(
+        {:mtproto, connection,
+         {:rpc_request_result, request_id, request, result} = event},
+        %__MODULE__{connection: connection} = state
+      ) do
+    notify(state, event)
+
+    {:noreply,
+     maybe_notify_decoded_request_result(state, request_id, request, result)}
   end
 
   def handle_info(
@@ -214,6 +313,121 @@ defmodule MTProto.Client do
 
       {:error, reason} ->
         {:error, {:session_store_load_failed, reason}}
+    end
+  end
+
+  defp normalize_result_type(opts) do
+    case Keyword.fetch(opts, :result_type) do
+      {:ok, result_type} when is_binary(result_type) ->
+        {:ok, result_type}
+
+      {:ok, result_type} when is_atom(result_type) ->
+        {:ok, Atom.to_string(result_type)}
+
+      {:ok, _result_type} ->
+        {:error, {:invalid_option, :result_type}}
+
+      :error ->
+        {:ok, nil}
+    end
+  end
+
+  defp invoke_with_tracking(state, opts, invoke_fun)
+       when is_function(invoke_fun, 0) do
+    with {:ok, result_type} <- normalize_result_type(opts) do
+      track_result_type_reply(invoke_fun.(), state, result_type)
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp track_result_type_reply(
+         {:ok, request_id},
+         state,
+         nil
+       ) do
+    {:reply, {:ok, request_id}, state}
+  end
+
+  defp track_result_type_reply(
+         {:ok, request_id},
+         %__MODULE__{} = state,
+         result_type
+       ) do
+    next_state =
+      put_in(state.pending_results[request_id], result_type)
+
+    {:reply, {:ok, request_id}, next_state}
+  end
+
+  defp track_result_type_reply({:error, reason}, state, _result_type) do
+    {:reply, {:error, reason}, state}
+  end
+
+  defp maybe_notify_decoded_result(
+         %__MODULE__{pending_results: pending_results} = state,
+         request_id,
+         result
+       ) do
+    case Map.fetch(pending_results, request_id) do
+      {:ok, result_type} ->
+        case Result.decode(result, type: result_type) do
+          {:ok, decoded} ->
+            notify(state, {:rpc_result_decoded, request_id, result, decoded})
+
+            if Result.rpc_error?(decoded) do
+              notify(state, {:rpc_error, request_id, result, decoded})
+            end
+
+          {:error, _reason} ->
+            :ok
+        end
+
+      :error ->
+        :ok
+    end
+  end
+
+  defp maybe_notify_decoded_request_result(
+         %__MODULE__{pending_results: pending_results} = state,
+         request_id,
+         request,
+         result
+       ) do
+    {result_type, pending_results} = Map.pop(pending_results, request_id)
+    next_state = %{state | pending_results: pending_results}
+
+    case result_type do
+      nil ->
+        next_state
+
+      result_type ->
+        case Result.decode(result, type: result_type) do
+          {:ok, decoded} ->
+            notify(
+              next_state,
+              {:rpc_request_result_decoded, request_id, request, result,
+               decoded}
+            )
+
+            if Result.rpc_error?(decoded) do
+              notify(
+                next_state,
+                {:rpc_request_error, request_id, request, result, decoded}
+              )
+            end
+
+            next_state
+
+          {:error, reason} ->
+            notify(
+              next_state,
+              {:rpc_request_result_decode_error, request_id, request,
+               result_type, reason}
+            )
+
+            next_state
+        end
     end
   end
 

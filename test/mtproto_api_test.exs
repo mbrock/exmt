@@ -42,4 +42,52 @@ defmodule MTProto.APITest do
              <<0xDA9B0D0D::little-unsigned-32,
                TL.encode_int(API.current_layer())::binary, 1, 2, 3, 4>>
   end
+
+  test "encodes codeSettings with optional flags" do
+    assert {:ok, encoded} =
+             API.code_settings(
+               allow_flashcall: true,
+               allow_app_hash: true,
+               logout_tokens: ["logout-1", "logout-2"],
+               token: "firebase-token",
+               app_sandbox: false
+             )
+
+    expected_flags = 0x1 + 0x10 + 0x40 + 0x100
+
+    assert encoded ==
+             <<0xAD253D78::little-unsigned-32,
+               TL.encode_int(expected_flags)::binary,
+               TL.encode_vector(
+                 ["logout-1", "logout-2"],
+                 &TL.encode_bytes/1
+               )::binary, TL.encode_bytes("firebase-token")::binary,
+               TL.encode_bool(false)::binary>>
+  end
+
+  test "builds auth.sendCode with nested codeSettings" do
+    assert {:ok, request} =
+             API.auth_send_code("+15551234567", "hash-123",
+               api_id: 12345,
+               settings: [allow_app_hash: true]
+             )
+
+    assert request ==
+             <<0xA677244F::little-unsigned-32,
+               TL.encode_bytes("+15551234567")::binary,
+               TL.encode_int(12345)::binary,
+               TL.encode_bytes("hash-123")::binary,
+               0xAD253D78::little-unsigned-32, TL.encode_int(0x10)::binary>>
+  end
+
+  test "builds auth.signIn with phone code" do
+    assert {:ok, request} =
+             API.auth_sign_in("+15551234567", "code-hash", "12345")
+
+    assert request ==
+             <<0x8D52A951::little-unsigned-32, TL.encode_int(1)::binary,
+               TL.encode_bytes("+15551234567")::binary,
+               TL.encode_bytes("code-hash")::binary,
+               TL.encode_bytes("12345")::binary>>
+  end
 end

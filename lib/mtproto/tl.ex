@@ -4,6 +4,8 @@ defmodule MTProto.TL do
   """
 
   @vector_constructor 0x1CB5C415
+  @bool_true 0x997275B5
+  @bool_false 0xBC799737
 
   @spec encode_int(integer()) :: binary()
   def encode_int(value)
@@ -17,6 +19,10 @@ defmodule MTProto.TL do
     do: {:ok, value, rest}
 
   def decode_int(_), do: {:error, :short_int}
+
+  @spec encode_bool(boolean()) :: binary()
+  def encode_bool(true), do: <<@bool_true::little-unsigned-32>>
+  def encode_bool(false), do: <<@bool_false::little-unsigned-32>>
 
   @spec encode_long(non_neg_integer()) :: binary()
   def encode_long(value)

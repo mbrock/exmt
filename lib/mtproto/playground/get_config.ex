@@ -2,7 +2,6 @@ defmodule MTProto.Playground.GetConfig do
   @moduledoc false
 
   alias MTProto.{API, Client, SessionData, TelegramKeys}
-  alias MTProto.API.Result
   alias MTProto.SessionStore.File, as: FileStore
   alias MTProto.TL.Runtime.Decoded
 
@@ -197,7 +196,7 @@ defmodule MTProto.Playground.GetConfig do
       pq_inner_data_mode: :dc,
       dc_id: endpoint.dc_id,
       session_store: {FileStore, session_file},
-      load_session_data?: false
+      load_session_data: false
     ]
 
     client_opts =
@@ -275,8 +274,14 @@ defmodule MTProto.Playground.GetConfig do
   defp wait_for_rpc_result_until(client, request_id, deadline, verbose?) do
     receive do
       {:mtproto, ^client,
-       {:rpc_request_result, ^request_id, :help_get_config, result}} ->
-        {:ok, summarize_result(result)}
+       {:rpc_request_result_decoded, ^request_id, :help_get_config, _result,
+        decoded}} ->
+        {:ok, %{kind: :decoded, decoded: decoded}}
+
+      {:mtproto, ^client,
+       {:rpc_request_result_decode_error, ^request_id, :help_get_config,
+        _result_type, reason}} ->
+        {:error, {:rpc_result_decode_error, reason}}
 
       {:mtproto, ^client, event} ->
         maybe_print_event(:rpc, event, verbose?)
@@ -287,21 +292,6 @@ defmodule MTProto.Playground.GetConfig do
     after
       remaining_timeout(deadline) ->
         {:error, :rpc_timeout}
-    end
-  end
-
-  defp summarize_result(result) do
-    case Result.decode(result) do
-      {:ok, decoded} ->
-        %{kind: :decoded, decoded: decoded, bytes: byte_size(result)}
-
-      {:error, reason} ->
-        %{
-          kind: :raw,
-          bytes: byte_size(result),
-          preview: hex_preview(result),
-          decode_error: reason
-        }
     end
   end
 
@@ -356,17 +346,8 @@ defmodule MTProto.Playground.GetConfig do
     end
   end
 
-  defp format_result(%{kind: :decoded, decoded: decoded, bytes: bytes}) do
-    "#{format_decoded(decoded)} (#{bytes} bytes)"
-  end
-
-  defp format_result(%{
-         kind: :raw,
-         bytes: bytes,
-         preview: preview,
-         decode_error: decode_error
-       }) do
-    "raw (#{bytes} bytes, preview=#{preview}, decode_error=#{inspect(decode_error)})"
+  defp format_result(%{kind: :decoded, decoded: decoded}) do
+    format_decoded(decoded)
   end
 
   defp format_decoded(%Decoded{
@@ -428,12 +409,6 @@ defmodule MTProto.Playground.GetConfig do
     |> Integer.to_string(16)
     |> String.downcase()
     |> String.pad_leading(8, "0")
-  end
-
-  defp hex_preview(binary) do
-    binary
-    |> binary_part(0, min(byte_size(binary), 24))
-    |> Base.encode16(case: :lower)
   end
 
   defp remaining_timeout(deadline) do
