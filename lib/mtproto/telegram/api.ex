@@ -5,13 +5,16 @@ defmodule MTProto.Telegram.API do
 
   use MTProto.Telegram.API.Namespaces
 
-  alias MTProto.Telegram.{Encoder, Request, Schema}
+  alias MTProto.TL.Encoder
+  alias MTProto.TL.Schema.Registry, as: SchemaRegistry
+  alias MTProto.Telegram.Request
 
   @default_layer 214
   @default_device_model "exmt"
   @default_system_lang_code "en"
   @default_lang_pack ""
   @default_lang_code "en"
+  @telegram_schema :telegram_api
 
   @type requestish :: Request.t() | {binary(), keyword()}
 
@@ -26,10 +29,20 @@ defmodule MTProto.Telegram.API do
 
   def compile_request({method, params}, opts)
       when is_binary(method) and is_list(params) and is_list(opts) do
-    with {:ok, query} <-
-           Encoder.encode_method(method, Keyword.merge(opts, params)),
-         {:ok, result_type} <- Schema.result_type(method) do
-      {:ok, Request.new(query, request_name(method), result_type)}
+    with {:ok, definition} <-
+           SchemaRegistry.function(@telegram_schema, method),
+         {:ok, query} <-
+           Encoder.encode_definition(
+             definition,
+             Keyword.merge(opts, params),
+             encoder_opts()
+           ) do
+      {:ok,
+       Request.new(
+         query,
+         request_name(method),
+         SchemaRegistry.result_type_name(definition)
+       )}
     else
       :error -> {:error, {:unknown_telegram_method, method}}
       {:error, reason} -> {:error, reason}
@@ -102,6 +115,10 @@ defmodule MTProto.Telegram.API do
     |> String.to_atom()
   end
 
+  defp encoder_opts do
+    [schema: @telegram_schema, normalize_value: &normalize_telegram_value/2]
+  end
+
   defp validate_query(query) when is_binary(query), do: {:ok, query}
   defp validate_query(_query), do: {:error, :invalid_query}
 
@@ -117,4 +134,32 @@ defmodule MTProto.Telegram.API do
       version -> to_string(version)
     end
   end
+
+  defp normalize_telegram_value("InputPeer", :empty),
+    do: {"inputPeerEmpty", []}
+
+  defp normalize_telegram_value("InputPeer", :self),
+    do: {"inputPeerSelf", []}
+
+  defp normalize_telegram_value("InputPeer", {:chat, chat_id})
+       when is_integer(chat_id),
+       do: {"inputPeerChat", [chat_id: chat_id]}
+
+  defp normalize_telegram_value("InputPeer", {:user, user_id, access_hash})
+       when is_integer(user_id) and is_integer(access_hash),
+       do: {"inputPeerUser", [user_id: user_id, access_hash: access_hash]}
+
+  defp normalize_telegram_value(
+         "InputPeer",
+         {:channel, channel_id, access_hash}
+       )
+       when is_integer(channel_id) and is_integer(access_hash),
+       do:
+         {"inputPeerChannel",
+          [channel_id: channel_id, access_hash: access_hash]}
+
+  defp normalize_telegram_value("InputUser", :self),
+    do: {"inputUserSelf", []}
+
+  defp normalize_telegram_value(_type_name, value), do: value
 end

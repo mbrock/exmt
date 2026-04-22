@@ -1,9 +1,11 @@
 defmodule MTProto.Telegram.API.Namespaces do
   @moduledoc false
 
-  alias MTProto.Telegram.Schema
+  alias MTProto.TL.Schema.Registry
 
-  @grouped_methods Schema.available_methods()
+  @telegram_schema :telegram_api
+
+  @grouped_methods Registry.available_methods(@telegram_schema)
                    |> Enum.filter(&String.contains?(&1, "."))
                    |> Enum.sort()
                    |> Enum.group_by(fn method ->

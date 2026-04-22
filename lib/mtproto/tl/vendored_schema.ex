@@ -386,6 +386,9 @@ defmodule MTProto.TL.VendoredSchema do
   @spec available?(atom()) :: boolean()
   def available?(schema_name), do: Map.has_key?(@schemas, schema_name)
 
+  @spec available_schemas() :: [atom()]
+  def available_schemas, do: Map.keys(@schemas)
+
   @spec load(atom()) :: {:ok, NormalizedSchema.t()} | {:error, term()}
   def load(schema_name) do
     case Map.fetch(@schemas, schema_name) do

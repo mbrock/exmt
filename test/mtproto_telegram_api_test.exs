@@ -3,8 +3,8 @@ defmodule MTProto.Telegram.APITest do
 
   alias MTProto.Telegram.API
   alias MTProto.Telegram.Request
-  alias MTProto.Telegram.Schema
   alias MTProto.TL
+  alias MTProto.TL.Schema.Registry
 
   test "generated namespace modules return exact schema method tuples" do
     assert API.Help.getConfig() == {"help.getConfig", []}
@@ -226,7 +226,7 @@ defmodule MTProto.Telegram.APITest do
              )
 
     assert request ==
-             <<Schema.function!("messages.sendMessage").id::little-unsigned-32,
+             <<Registry.function!(:telegram_api, "messages.sendMessage").id::little-unsigned-32,
                TL.encode_int(0)::binary, 0x7DA07EC9::little-unsigned-32,
                TL.encode_bytes("hello")::binary,
                TL.encode_signed_long(123_456)::binary>>

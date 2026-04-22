@@ -1,34 +1,32 @@
-defmodule MTProto.Telegram.Encoder do
-  @moduledoc false
+defmodule MTProto.TL.Encoder do
+  @moduledoc """
+  Schema-driven TL encoder for boxed and bare definitions.
+  """
 
   import Bitwise
 
   alias MTProto.TL
+  alias MTProto.TL.Schema.Registry, as: SchemaRegistry
   alias MTProto.TL.Runtime.Decoded
   alias MTProto.TL.Schema.Definition
   alias MTProto.TL.Schema.Param
   alias MTProto.TL.Schema.TypeExpr
-  alias MTProto.Telegram.Schema
 
   @min_signed_long -0x8000_0000_0000_0000
   @max_signed_long 0x7FFF_FFFF_FFFF_FFFF
 
-  @spec encode_method(binary(), keyword() | map()) ::
-          {:ok, binary()} | {:error, term()}
-  def encode_method(method, params) when is_binary(method) do
-    with {:ok, definition} <- fetch_function(method),
-         {:ok, encoded} <- encode_definition(definition, params, boxed: true) do
-      {:ok, encoded}
-    end
-  end
+  @type option ::
+          {:boxed, boolean()}
+          | {:schema, atom()}
+          | {:normalize_value, (binary(), term() -> term())}
 
-  @spec encode_definition(Definition.t(), keyword() | map(), keyword()) ::
+  @spec encode_definition(Definition.t(), keyword() | map(), [option()]) ::
           {:ok, binary()} | {:error, term()}
   def encode_definition(%Definition{} = definition, params, opts \\ []) do
     with {:ok, fields} <- normalize_fields(params),
          {:ok, flags_state} <- build_flags(definition.params, fields, %{}),
          {:ok, body} <-
-           encode_params(definition.params, fields, flags_state, []) do
+           encode_params(definition.params, fields, flags_state, opts, []) do
       encoded =
         case Keyword.get(opts, :boxed, true) do
           true ->
@@ -39,20 +37,6 @@ defmodule MTProto.Telegram.Encoder do
         end
 
       {:ok, IO.iodata_to_binary(encoded)}
-    end
-  end
-
-  defp fetch_function(method) do
-    case Schema.function(method) do
-      {:ok, definition} -> {:ok, definition}
-      :error -> {:error, {:unknown_telegram_method, method}}
-    end
-  end
-
-  defp fetch_constructor(name) do
-    case Schema.constructor(name) do
-      {:ok, definition} -> {:ok, definition}
-      :error -> {:error, {:unknown_telegram_constructor, name}}
     end
   end
 
@@ -99,19 +83,26 @@ defmodule MTProto.Telegram.Encoder do
     end
   end
 
-  defp encode_params([], _fields, _flags_state, encoded),
+  defp encode_params([], _fields, _flags_state, _opts, encoded),
     do: {:ok, Enum.reverse(encoded)}
 
-  defp encode_params([%Param{} = param | rest], fields, flags_state, encoded) do
-    with {:ok, value} <- encode_param(param, fields, flags_state) do
-      encode_params(rest, fields, flags_state, [value | encoded])
+  defp encode_params(
+         [%Param{} = param | rest],
+         fields,
+         flags_state,
+         opts,
+         encoded
+       ) do
+    with {:ok, value} <- encode_param(param, fields, flags_state, opts) do
+      encode_params(rest, fields, flags_state, opts, [value | encoded])
     end
   end
 
   defp encode_param(
          %Param{type: %TypeExpr.Special{value: "#"}} = param,
          _fields,
-         flags_state
+         flags_state,
+         _opts
        ) do
     {:ok, TL.encode_int(Map.get(flags_state, field_key(param), 0))}
   end
@@ -125,7 +116,8 @@ defmodule MTProto.Telegram.Encoder do
            }
          } = param,
          fields,
-         flags_state
+         flags_state,
+         opts
        ) do
     flags_value = Map.get(flags_state, flags_field, 0)
 
@@ -136,7 +128,7 @@ defmodule MTProto.Telegram.Encoder do
 
         _ ->
           with {:ok, value} <- fetch_present_field(fields, field_key(param)),
-               {:ok, encoded} <- encode_type(inner_type, value) do
+               {:ok, encoded} <- encode_type(inner_type, value, opts) do
             {:ok, encoded}
           end
       end
@@ -145,15 +137,15 @@ defmodule MTProto.Telegram.Encoder do
     end
   end
 
-  defp encode_param(%Param{type: type} = param, fields, _flags_state) do
+  defp encode_param(%Param{type: type} = param, fields, _flags_state, opts) do
     key = field_key(param)
 
     case fetch_present_field(fields, key) do
       {:ok, value} ->
-        encode_type(type, value)
+        encode_type(type, value, opts)
 
       :error ->
-        case encode_type(type, nil) do
+        case encode_type(type, nil, opts) do
           {:ok, encoded} ->
             {:ok, encoded}
 
@@ -166,145 +158,208 @@ defmodule MTProto.Telegram.Encoder do
     end
   end
 
-  defp encode_type(%TypeExpr.Bang{type: type}, value),
-    do: encode_type(type, value)
+  defp encode_type(%TypeExpr.Bang{type: type}, value, opts),
+    do: encode_type(type, value, opts)
 
-  defp encode_type(%TypeExpr.Bare{type: type}, value),
-    do: encode_type(type, value)
+  defp encode_type(%TypeExpr.Bare{type: type}, value, opts),
+    do: encode_type(type, value, opts)
 
   defp encode_type(
          %TypeExpr.Vector{item_type: item_type, boxing: :boxed},
-         value
+         value,
+         opts
        )
        when is_list(value) do
-    with {:ok, items} <- encode_items(value, item_type, []) do
+    with {:ok, items} <- encode_items(value, item_type, opts, []) do
       {:ok, TL.encode_vector(items, &IO.iodata_to_binary/1)}
     end
   end
 
   defp encode_type(
          %TypeExpr.Vector{item_type: item_type, boxing: :bare},
-         value
+         value,
+         opts
        )
        when is_list(value) do
-    with {:ok, items} <- encode_items(value, item_type, []) do
+    with {:ok, items} <- encode_items(value, item_type, opts, []) do
       {:ok, [TL.encode_int(length(value)) | items] |> IO.iodata_to_binary()}
     end
   end
 
-  defp encode_type(%TypeExpr.Vector{}, _value), do: {:error, :invalid_vector}
+  defp encode_type(%TypeExpr.Vector{}, _value, _opts),
+    do: {:error, :invalid_vector}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "int"}, value),
+  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "int"}, value, _opts),
     do: encode_int(value)
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "int32"}, value),
-    do: encode_int(value)
+  defp encode_type(
+         %TypeExpr.Ref{kind: :builtin, name: "int32"},
+         value,
+         _opts
+       ),
+       do: encode_int(value)
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "int53"}, value),
+  defp encode_type(
+         %TypeExpr.Ref{kind: :builtin, name: "int53"},
+         value,
+         _opts
+       ),
+       do: encode_signed_long(value)
+
+  defp encode_type(
+         %TypeExpr.Ref{kind: :builtin, name: "int64"},
+         value,
+         _opts
+       ),
+       do: encode_signed_long(value)
+
+  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "long"}, value, _opts),
     do: encode_signed_long(value)
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "int64"}, value),
-    do: encode_signed_long(value)
-
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "long"}, value),
-    do: encode_signed_long(value)
-
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "int128"}, value)
+  defp encode_type(
+         %TypeExpr.Ref{kind: :builtin, name: "int128"},
+         value,
+         _opts
+       )
        when is_binary(value) and byte_size(value) == 16,
        do: {:ok, TL.encode_int128(value)}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "int128"}, nil),
+  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "int128"}, nil, _opts),
     do: {:error, :missing_value}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "int128"}, _value),
-    do: {:error, :invalid_int128}
+  defp encode_type(
+         %TypeExpr.Ref{kind: :builtin, name: "int128"},
+         _value,
+         _opts
+       ),
+       do: {:error, :invalid_int128}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "int256"}, value)
+  defp encode_type(
+         %TypeExpr.Ref{kind: :builtin, name: "int256"},
+         value,
+         _opts
+       )
        when is_binary(value) and byte_size(value) == 32,
        do: {:ok, TL.encode_int256(value)}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "int256"}, nil),
+  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "int256"}, nil, _opts),
     do: {:error, :missing_value}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "int256"}, _value),
-    do: {:error, :invalid_int256}
+  defp encode_type(
+         %TypeExpr.Ref{kind: :builtin, name: "int256"},
+         _value,
+         _opts
+       ),
+       do: {:error, :invalid_int256}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "double"}, value)
+  defp encode_type(
+         %TypeExpr.Ref{kind: :builtin, name: "double"},
+         value,
+         _opts
+       )
        when is_float(value),
        do: {:ok, <<value::little-float-64>>}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "double"}, nil),
+  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "double"}, nil, _opts),
     do: {:error, :missing_value}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "double"}, _value),
-    do: {:error, :invalid_double}
+  defp encode_type(
+         %TypeExpr.Ref{kind: :builtin, name: "double"},
+         _value,
+         _opts
+       ),
+       do: {:error, :invalid_double}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "string"}, value)
+  defp encode_type(
+         %TypeExpr.Ref{kind: :builtin, name: "string"},
+         value,
+         _opts
+       )
        when is_binary(value),
        do: {:ok, TL.encode_bytes(value)}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "string"}, nil),
+  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "string"}, nil, _opts),
     do: {:error, :missing_value}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "string"}, _value),
-    do: {:error, :invalid_string}
+  defp encode_type(
+         %TypeExpr.Ref{kind: :builtin, name: "string"},
+         _value,
+         _opts
+       ),
+       do: {:error, :invalid_string}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "bytes"}, value)
+  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "bytes"}, value, _opts)
        when is_binary(value),
        do: {:ok, TL.encode_bytes(value)}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "bytes"}, nil),
+  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "bytes"}, nil, _opts),
     do: {:error, :missing_value}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "bytes"}, _value),
-    do: {:error, :invalid_bytes}
+  defp encode_type(
+         %TypeExpr.Ref{kind: :builtin, name: "bytes"},
+         _value,
+         _opts
+       ),
+       do: {:error, :invalid_bytes}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "true"}, true),
+  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "true"}, true, _opts),
     do: {:ok, <<>>}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "true"}, nil),
+  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "true"}, nil, _opts),
     do: {:error, :missing_value}
 
-  defp encode_type(%TypeExpr.Ref{kind: :builtin, name: "true"}, _value),
-    do: {:error, :invalid_true}
+  defp encode_type(
+         %TypeExpr.Ref{kind: :builtin, name: "true"},
+         _value,
+         _opts
+       ),
+       do: {:error, :invalid_true}
 
-  defp encode_type(%TypeExpr.Ref{kind: :generic}, value)
+  defp encode_type(%TypeExpr.Ref{kind: :generic}, value, _opts)
        when is_binary(value),
        do: {:ok, value}
 
-  defp encode_type(%TypeExpr.Ref{kind: :generic}, nil),
+  defp encode_type(%TypeExpr.Ref{kind: :generic}, nil, _opts),
     do: {:error, :missing_value}
 
-  defp encode_type(%TypeExpr.Ref{kind: :generic}, _value),
+  defp encode_type(%TypeExpr.Ref{kind: :generic}, _value, _opts),
     do: {:error, :invalid_generic_value}
 
   defp encode_type(
          %TypeExpr.Ref{kind: :type, boxing: :boxed, name: "Bool"},
-         value
+         value,
+         _opts
        )
        when is_boolean(value),
        do: {:ok, TL.encode_bool(value)}
 
   defp encode_type(
          %TypeExpr.Ref{kind: :type, boxing: :boxed, name: "Bool"},
-         nil
+         nil,
+         _opts
        ),
        do: {:error, :missing_value}
 
   defp encode_type(
          %TypeExpr.Ref{kind: :type, boxing: :boxed, name: "Bool"},
-         _value
+         _value,
+         _opts
        ),
        do: {:error, :invalid_bool}
 
   defp encode_type(
          %TypeExpr.Ref{kind: :type, boxing: :boxed, name: type_name},
-         value
+         value,
+         opts
        ) do
     with {:ok, definition, constructor_params} <-
-           select_boxed_constructor(type_name, value),
+           select_boxed_constructor(type_name, value, opts),
          {:ok, encoded} <-
-           encode_definition(definition, constructor_params, boxed: true) do
+           encode_definition(
+             definition,
+             constructor_params,
+             Keyword.put(opts, :boxed, true)
+           ) do
       {:ok, encoded}
     end
   end
@@ -315,50 +370,65 @@ defmodule MTProto.Telegram.Encoder do
            boxing: :bare,
            name: constructor_name
          },
-         value
+         value,
+         opts
        ) do
-    with {:ok, definition} <- fetch_constructor(constructor_name),
+    with {:ok, definition} <- fetch_constructor(constructor_name, opts),
          {:ok, constructor_params} <-
            bare_constructor_params(definition, value),
          {:ok, encoded} <-
-           encode_definition(definition, constructor_params, boxed: false) do
+           encode_definition(
+             definition,
+             constructor_params,
+             Keyword.put(opts, :boxed, false)
+           ) do
       {:ok, encoded}
     end
   end
 
-  defp encode_type(type, _value), do: {:error, {:unsupported_type, type}}
+  defp encode_type(type, _value, _opts),
+    do: {:error, {:unsupported_type, type}}
 
-  defp encode_items([], _item_type, encoded), do: {:ok, Enum.reverse(encoded)}
+  defp encode_items([], _item_type, _opts, encoded),
+    do: {:ok, Enum.reverse(encoded)}
 
-  defp encode_items([item | rest], item_type, encoded) do
-    with {:ok, encoded_item} <- encode_type(item_type, item) do
-      encode_items(rest, item_type, [encoded_item | encoded])
+  defp encode_items([item | rest], item_type, opts, encoded) do
+    with {:ok, encoded_item} <- encode_type(item_type, item, opts) do
+      encode_items(rest, item_type, opts, [encoded_item | encoded])
     end
   end
 
-  defp select_boxed_constructor(type_name, nil) do
-    case defaultable_constructor(type_name) do
+  defp select_boxed_constructor(type_name, nil, opts) do
+    case defaultable_constructor(type_name, opts) do
       {:ok, definition} -> {:ok, definition, []}
       :error -> {:error, :missing_value}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  defp select_boxed_constructor(type_name, value) do
-    case normalize_special_value(type_name, value) do
+  defp select_boxed_constructor(type_name, value, opts) do
+    case normalize_value(type_name, value, opts) do
       %Decoded{tl_name: constructor_name, fields: fields} ->
-        explicit_constructor(type_name, constructor_name, fields)
+        explicit_constructor(type_name, constructor_name, fields, opts)
 
       {constructor_name, constructor_params}
       when is_binary(constructor_name) and
              (is_list(constructor_params) or is_map(constructor_params)) ->
-        explicit_constructor(type_name, constructor_name, constructor_params)
+        explicit_constructor(
+          type_name,
+          constructor_name,
+          constructor_params,
+          opts
+        )
 
       constructor_params
       when is_list(constructor_params) or is_map(constructor_params) ->
-        case Schema.constructors_for_type(type_name) do
-          [definition] -> {:ok, definition, constructor_params}
-          [] -> {:error, {:unknown_telegram_type, type_name}}
-          _definitions -> {:error, {:ambiguous_constructor, type_name}}
+        with {:ok, definitions} <- constructors_for_type(type_name, opts) do
+          case definitions do
+            [definition] -> {:ok, definition, constructor_params}
+            [] -> {:error, {:unknown_type, type_name}}
+            _definitions -> {:error, {:ambiguous_constructor, type_name}}
+          end
         end
 
       _other ->
@@ -366,8 +436,13 @@ defmodule MTProto.Telegram.Encoder do
     end
   end
 
-  defp explicit_constructor(type_name, constructor_name, constructor_params) do
-    with {:ok, definition} <- fetch_constructor(constructor_name),
+  defp explicit_constructor(
+         type_name,
+         constructor_name,
+         constructor_params,
+         opts
+       ) do
+    with {:ok, definition} <- fetch_constructor(constructor_name, opts),
          :ok <- validate_constructor_type(definition, type_name) do
       {:ok, definition, constructor_params}
     end
@@ -396,17 +471,51 @@ defmodule MTProto.Telegram.Encoder do
     end
   end
 
-  defp defaultable_constructor(type_name) do
-    case Schema.constructors_for_type(type_name) do
-      [definition] ->
-        if constructor_params_optional?(definition.params) do
-          {:ok, definition}
-        else
+  defp defaultable_constructor(type_name, opts) do
+    with {:ok, definitions} <- constructors_for_type(type_name, opts) do
+      case definitions do
+        [definition] ->
+          if constructor_params_optional?(definition.params) do
+            {:ok, definition}
+          else
+            :error
+          end
+
+        _ ->
           :error
+      end
+    end
+  end
+
+  defp constructors_for_type(type_name, opts) do
+    with {:ok, schema_name} <- fetch_schema(opts, {:type, type_name}) do
+      {:ok, SchemaRegistry.constructors_for_type(schema_name, type_name)}
+    end
+  end
+
+  defp fetch_constructor(name, opts) do
+    with {:ok, schema_name} <- fetch_schema(opts, {:constructor, name}) do
+      case SchemaRegistry.constructor(schema_name, name) do
+        {:ok, definition} -> {:ok, definition}
+        :error -> {:error, {:unknown_constructor, name}}
+      end
+    end
+  end
+
+  defp fetch_schema(opts, context) do
+    case Keyword.get(opts, :schema) do
+      schema_name when is_atom(schema_name) ->
+        if SchemaRegistry.available?(schema_name) do
+          {:ok, schema_name}
+        else
+          {:error, {:invalid_schema, schema_name}}
         end
 
-      _ ->
-        :error
+      nil ->
+        {:error, {:missing_schema, context}}
+
+      schema ->
+        {:error, {:invalid_schema, schema}}
     end
   end
 
@@ -422,7 +531,7 @@ defmodule MTProto.Telegram.Encoder do
          %Definition{} = definition,
          expected_type_name
        ) do
-    case Schema.result_type_name(definition) do
+    case result_type_name(definition) do
       ^expected_type_name ->
         :ok
 
@@ -433,31 +542,19 @@ defmodule MTProto.Telegram.Encoder do
     end
   end
 
-  defp normalize_special_value("InputPeer", :empty),
-    do: {"inputPeerEmpty", []}
+  defp result_type_name(%Definition{
+         result_type: %TypeExpr.Ref{name: name}
+       }),
+       do: name
 
-  defp normalize_special_value("InputPeer", :self), do: {"inputPeerSelf", []}
+  defp result_type_name(%Definition{}), do: nil
 
-  defp normalize_special_value("InputPeer", {:chat, chat_id})
-       when is_integer(chat_id),
-       do: {"inputPeerChat", [chat_id: chat_id]}
-
-  defp normalize_special_value("InputPeer", {:user, user_id, access_hash})
-       when is_integer(user_id) and is_integer(access_hash),
-       do: {"inputPeerUser", [user_id: user_id, access_hash: access_hash]}
-
-  defp normalize_special_value(
-         "InputPeer",
-         {:channel, channel_id, access_hash}
-       )
-       when is_integer(channel_id) and is_integer(access_hash),
-       do:
-         {"inputPeerChannel",
-          [channel_id: channel_id, access_hash: access_hash]}
-
-  defp normalize_special_value("InputUser", :self), do: {"inputUserSelf", []}
-
-  defp normalize_special_value(_type_name, value), do: value
+  defp normalize_value(type_name, value, opts) do
+    case Keyword.get(opts, :normalize_value) do
+      fun when is_function(fun, 2) -> fun.(type_name, value)
+      _ -> value
+    end
+  end
 
   defp fetch_present_field(fields, key) do
     case Map.fetch(fields, key) do
