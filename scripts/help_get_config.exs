@@ -7,7 +7,7 @@ defmodule MTProto.Scripts.HelpGetConfig do
   should be treated as the source of truth for current DC addresses.
   """
 
-  alias MTProto.{API, TCPConnection, TL, TelegramKeys}
+  alias MTProto.{API, Client, TL, TelegramKeys}
 
   @config 0xCC1A241E
   @gzip_packed 0x3072CFA1
@@ -105,11 +105,11 @@ defmodule MTProto.Scripts.HelpGetConfig do
     case start_connection(endpoint) do
       {:ok, connection} ->
         try do
-          with :ok <- TCPConnection.begin_auth_key_exchange(connection),
+          with :ok <- Client.begin_auth_key_exchange(connection),
                {:ok, session_id} <-
                  wait_for_session_ready(connection, timeout, verbose?),
                {:ok, request_id} <-
-                 TCPConnection.get_config(connection,
+                 Client.get_config(connection,
                    api_id: api_id,
                    request: :help_get_config
                  ),
@@ -139,7 +139,7 @@ defmodule MTProto.Scripts.HelpGetConfig do
   end
 
   defp start_connection(endpoint) do
-    TCPConnection.start_link(
+    Client.start_link(
       host: endpoint.host,
       port: endpoint.port,
       public_keys: TelegramKeys.main_keys!(),
