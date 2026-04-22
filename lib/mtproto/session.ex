@@ -32,13 +32,22 @@ defmodule MTProto.Session do
 
   @type effect :: {:send_encrypted, binary()} | {:notify, term()}
 
+  @type pending_request :: %{
+          body: binary(),
+          request: term(),
+          seq_no: integer()
+        }
+
   @type t :: %__MODULE__{
           auth_key: AuthKey.t(),
           server_salt: integer(),
           session_id: integer(),
           time_offset: integer(),
           last_msg_id: non_neg_integer() | nil,
-          sent_content_messages: non_neg_integer()
+          sent_content_messages: non_neg_integer(),
+          pending_requests: %{
+            optional(non_neg_integer()) => pending_request()
+          }
         }
 
   defstruct [
@@ -47,7 +56,8 @@ defmodule MTProto.Session do
     :session_id,
     :time_offset,
     :last_msg_id,
-    sent_content_messages: 0
+    sent_content_messages: 0,
+    pending_requests: %{}
   ]
 
   @spec new(ExchangeResult.t()) :: {:ok, t()} | {:error, term()}
@@ -75,7 +85,8 @@ defmodule MTProto.Session do
          session_id: session_id,
          time_offset: time_offset,
          last_msg_id: Keyword.get(opts, :last_msg_id),
-         sent_content_messages: Keyword.get(opts, :sent_content_messages, 0)
+         sent_content_messages: Keyword.get(opts, :sent_content_messages, 0),
+         pending_requests: %{}
        }}
     end
   end
@@ -117,6 +128,33 @@ defmodule MTProto.Session do
   def send_ping(%__MODULE__{}, _now_ns, _ping_id, _opts),
     do: {:error, :invalid_now}
 
+  @spec send_request(t(), non_neg_integer(), binary(), keyword()) ::
+          {:ok, t(), non_neg_integer(), [effect()]} | {:error, term()}
+  def send_request(session, now_ns, body, opts \\ [])
+
+  def send_request(%__MODULE__{} = session, now_ns, body, opts)
+      when is_integer(now_ns) and now_ns >= 0 and is_binary(body) do
+    request = Keyword.get(opts, :request, body)
+
+    with {:ok, next_session, packet, encrypted} <-
+           send_message(session, now_ns, body, true, opts),
+         tracked_session =
+           track_pending_request(next_session, packet, request) do
+      {:ok, tracked_session, packet.message_id,
+       [
+         {:send_encrypted, encrypted},
+         {:notify, {:encrypted_packet_sent, packet}},
+         {:notify,
+          {:session_message_sent, packet.message_id, packet.seq_no,
+           packet.body}},
+         {:notify, {:rpc_request_sent, packet.message_id, request}}
+       ]}
+    end
+  end
+
+  def send_request(%__MODULE__{}, _now_ns, _body, _opts),
+    do: {:error, :invalid_now}
+
   @spec receive_packet(t(), binary(), non_neg_integer(), keyword()) ::
           {:ok, t(), [effect()]} | {:error, term()}
   def receive_packet(session, payload, now_ns, opts \\ [])
@@ -128,7 +166,7 @@ defmodule MTProto.Session do
              sender: :server,
              session_id: session.session_id
            ),
-         {:ok, next_session, effects} <- handle_packet(session, packet),
+         {:ok, next_session, effects} <- handle_packet(session, packet, opts),
          {:ok, final_session, ack_effects} <-
            maybe_ack(next_session, packet, now_ns, opts) do
       {:ok, final_session, effects ++ ack_effects}
@@ -138,13 +176,18 @@ defmodule MTProto.Session do
   def receive_packet(%__MODULE__{}, _payload, _now_ns, _opts),
     do: {:error, :invalid_now}
 
-  defp handle_packet(%__MODULE__{} = session, %EncryptedPacket{} = packet) do
+  defp handle_packet(
+         %__MODULE__{} = session,
+         %EncryptedPacket{} = packet,
+         opts
+       ) do
     with {:ok, next_session, effects} <-
            handle_message(
              session,
              packet.message_id,
              packet.seq_no,
              packet.body,
+             opts,
              [
                {:notify, {:encrypted_packet_received, packet}},
                {:notify,
@@ -161,6 +204,7 @@ defmodule MTProto.Session do
          _message_id,
          _seq_no,
          <<@pong::little-unsigned-32, rest::binary>>,
+         _opts,
          effects
        ) do
     with {:ok, msg_id, rest} <- TL.decode_signed_long(rest),
@@ -174,6 +218,7 @@ defmodule MTProto.Session do
          _message_id,
          _seq_no,
          <<@msgs_ack::little-unsigned-32, rest::binary>>,
+         _opts,
          effects
        ) do
     with {:ok, msg_ids, <<>>} <-
@@ -187,6 +232,7 @@ defmodule MTProto.Session do
          _message_id,
          _seq_no,
          <<@new_session_created::little-unsigned-32, rest::binary>>,
+         _opts,
          effects
        ) do
     with {:ok, first_msg_id, rest} <- TL.decode_signed_long(rest),
@@ -206,19 +252,23 @@ defmodule MTProto.Session do
          _message_id,
          _seq_no,
          <<@bad_server_salt::little-unsigned-32, rest::binary>>,
+         opts,
          effects
        ) do
     with {:ok, bad_msg_id, rest} <- TL.decode_signed_long(rest),
          {:ok, bad_msg_seq_no, rest} <- TL.decode_int(rest),
          {:ok, error_code, rest} <- TL.decode_int(rest),
-         {:ok, new_server_salt, <<>>} <- TL.decode_signed_long(rest) do
-      {:ok, %{session | server_salt: new_server_salt},
+         {:ok, new_server_salt, <<>>} <- TL.decode_signed_long(rest),
+         updated_session = %{session | server_salt: new_server_salt},
+         {:ok, final_session, resend_effects} <-
+           maybe_resend_bad_request(updated_session, bad_msg_id, opts) do
+      {:ok, final_session,
        effects ++
          [
            {:notify,
             {:bad_server_salt, bad_msg_id, bad_msg_seq_no, error_code,
              new_server_salt}}
-         ]}
+         ] ++ resend_effects}
     end
   end
 
@@ -227,11 +277,26 @@ defmodule MTProto.Session do
          _message_id,
          _seq_no,
          <<@rpc_result::little-unsigned-32, rest::binary>>,
+         _opts,
          effects
        ) do
     with {:ok, req_msg_id, result} <- decode_rpc_result(rest) do
-      {:ok, session,
-       effects ++ [{:notify, {:rpc_result, req_msg_id, result}}]}
+      {pending_request, next_session} =
+        pop_pending_request(session, req_msg_id)
+
+      rpc_effects =
+        case pending_request do
+          nil ->
+            [{:notify, {:rpc_result, req_msg_id, result}}]
+
+          %{request: request} ->
+            [
+              {:notify, {:rpc_result, req_msg_id, result}},
+              {:notify, {:rpc_request_result, req_msg_id, request, result}}
+            ]
+        end
+
+      {:ok, next_session, effects ++ rpc_effects}
     end
   end
 
@@ -241,6 +306,7 @@ defmodule MTProto.Session do
          _seq_no,
          <<@msg_container::little-unsigned-32, count::little-signed-32,
            rest::binary>>,
+         opts,
          effects
        )
        when count >= 0 do
@@ -254,6 +320,7 @@ defmodule MTProto.Session do
                message.message_id,
                message.seq_no,
                message.body,
+               opts,
                acc_effects ++
                  [
                    {:notify,
@@ -271,7 +338,7 @@ defmodule MTProto.Session do
     end
   end
 
-  defp handle_message(session, message_id, seq_no, body, effects)
+  defp handle_message(session, message_id, seq_no, body, _opts, effects)
        when is_binary(body) do
     {:ok, session,
      effects ++
@@ -315,6 +382,41 @@ defmodule MTProto.Session do
     end
   end
 
+  defp maybe_resend_bad_request(
+         %__MODULE__{} = session,
+         bad_msg_id,
+         opts
+       ) do
+    case Map.get(session.pending_requests, bad_msg_id) do
+      nil ->
+        {:ok, session, []}
+
+      %{body: body, request: request, seq_no: seq_no} ->
+        resend_packet = %EncryptedPacket{
+          salt: session.server_salt,
+          session_id: session.session_id,
+          message_id: bad_msg_id,
+          seq_no: seq_no,
+          body: body
+        }
+
+        with {:ok, packet, encrypted} <-
+               encode_packet(session, resend_packet, opts) do
+          {:ok, session,
+           [
+             {:send_encrypted, encrypted},
+             {:notify, {:encrypted_packet_sent, packet}},
+             {:notify,
+              {:session_message_sent, packet.message_id, packet.seq_no,
+               packet.body}},
+             {:notify,
+              {:rpc_request_resent, packet.message_id, request,
+               session.server_salt}}
+           ]}
+        end
+    end
+  end
+
   defp send_message(%__MODULE__{} = session, now_ns, body, content?, opts) do
     packet = %EncryptedPacket{
       salt: session.server_salt,
@@ -324,6 +426,18 @@ defmodule MTProto.Session do
       body: body
     }
 
+    with {:ok, finalized_packet, encrypted} <-
+           encode_packet(session, packet, opts) do
+      {:ok, advance_outbound(session, finalized_packet.message_id, content?),
+       finalized_packet, encrypted}
+    end
+  end
+
+  defp encode_packet(
+         %__MODULE__{} = session,
+         %EncryptedPacket{} = packet,
+         opts
+       ) do
     with {:ok, encrypted} <-
            EncryptedPacket.encode(packet, session.auth_key,
              sender: :client,
@@ -334,8 +448,7 @@ defmodule MTProto.Session do
              sender: :client,
              session_id: session.session_id
            ) do
-      {:ok, advance_outbound(session, finalized_packet.message_id, content?),
-       finalized_packet, encrypted}
+      {:ok, finalized_packet, encrypted}
     end
   end
 
@@ -362,6 +475,30 @@ defmodule MTProto.Session do
       | last_msg_id: message_id,
         sent_content_messages: session.sent_content_messages + 1
     }
+  end
+
+  defp track_pending_request(
+         %__MODULE__{} = session,
+         %EncryptedPacket{} = packet,
+         request
+       ) do
+    pending_request = %{
+      body: packet.body,
+      request: request,
+      seq_no: packet.seq_no
+    }
+
+    put_in(session.pending_requests[packet.message_id], pending_request)
+  end
+
+  defp pop_pending_request(%__MODULE__{} = session, req_msg_id) do
+    case Map.pop(session.pending_requests, req_msg_id) do
+      {nil, _pending_requests} ->
+        {nil, session}
+
+      {pending_request, pending_requests} ->
+        {pending_request, %{session | pending_requests: pending_requests}}
+    end
   end
 
   defp encode_ping(ping_id) do

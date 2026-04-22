@@ -45,6 +45,232 @@ defmodule MTProto.TCPConnectionTest do
   end
 
   test "TCP connection completes auth, starts a session, and exchanges an encrypted ping" do
+    %{connection: connection, socket: socket, result: result} =
+      start_authenticated_connection()
+
+    assert :ok =
+             TCPConnection.ping(connection, 99,
+               padding_bytes: :binary.copy(<<0xAA>>, 64)
+             )
+
+    assert_receive {:fake_socket, :send, ^socket, ping_packet}
+
+    assert_receive {:mtproto, ^connection,
+                    {:encrypted_packet_sent, sent_packet}}
+
+    assert_receive {:mtproto, ^connection,
+                    {:session_message_sent, ping_msg_id, 0, ping_body}}
+
+    assert_receive {:mtproto, ^connection, {:ping_sent, ^ping_msg_id, 99}}
+
+    assert ping_body == ping_body(99)
+
+    assert {:ok, ping_payload} = decode_transport_frame(ping_packet)
+
+    assert {:ok, decoded_ping_packet} =
+             EncryptedPacket.decode(ping_payload, result.auth_key,
+               sender: :client,
+               session_id: 123
+             )
+
+    assert decoded_ping_packet == sent_packet
+    assert decoded_ping_packet.body == ping_body(99)
+    assert decoded_ping_packet.seq_no == 0
+
+    server_body =
+      message_container_body([
+        %{
+          message_id: 701,
+          seq_no: 0,
+          body: new_session_created_body(111, 222, 555)
+        },
+        %{message_id: 705, seq_no: 0, body: pong_body(ping_msg_id, 99)}
+      ])
+
+    assert {:ok, server_payload} =
+             EncryptedPacket.encode(
+               %EncryptedPacket{
+                 salt: result.server_salt,
+                 session_id: 123,
+                 message_id: 7_000,
+                 seq_no: 1,
+                 body: server_body
+               },
+               result.auth_key,
+               sender: :server,
+               padding_bytes: :binary.copy(<<0xBB>>, 64)
+             )
+
+    send(connection, {:tcp, socket, Abridged.encode(server_payload)})
+
+    assert_receive {:mtproto, ^connection,
+                    {:encrypted_packet_received, _packet}}
+
+    assert_receive {:mtproto, ^connection,
+                    {:new_session_created, 111, 222, 555}}
+
+    assert_receive {:mtproto, ^connection, {:pong, ^ping_msg_id, 99}}
+
+    assert_receive {:fake_socket, :send, ^socket, ack_packet}
+
+    assert_receive {:mtproto, ^connection,
+                    {:msgs_ack_sent, ack_msg_id, [7_000]}}
+
+    assert {:ok, ack_payload} = decode_transport_frame(ack_packet)
+
+    assert {:ok, ack_plaintext} =
+             EncryptedPacket.decode(ack_payload, result.auth_key,
+               sender: :client,
+               session_id: 123
+             )
+
+    assert ack_plaintext.message_id == ack_msg_id
+    assert ack_plaintext.salt == 555
+    assert ack_plaintext.seq_no == 0
+    assert ack_plaintext.body == msgs_ack_body([7_000])
+
+    assert_receive {:fake_socket, :setopts, ^socket, [active: :once]}
+  end
+
+  test "TCP connection sends raw RPC requests and correlates rpc_result" do
+    %{connection: connection, socket: socket, result: result} =
+      start_authenticated_connection()
+
+    request_body = <<0x44, 0x33, 0x22, 0x11>>
+    response_body = <<0x88, 0x77, 0x66, 0x55>>
+
+    assert {:ok, request_id} =
+             TCPConnection.invoke(connection, request_body,
+               request: :demo_request,
+               padding_bytes: :binary.copy(<<0xAA>>, 64)
+             )
+
+    assert_receive {:fake_socket, :send, ^socket, request_packet}
+
+    assert_receive {:mtproto, ^connection,
+                    {:encrypted_packet_sent, sent_packet}}
+
+    assert_receive {:mtproto, ^connection,
+                    {:session_message_sent, ^request_id, 1, ^request_body}}
+
+    assert_receive {:mtproto, ^connection,
+                    {:rpc_request_sent, ^request_id, :demo_request}}
+
+    assert {:ok, request_payload} = decode_transport_frame(request_packet)
+
+    assert {:ok, decoded_request_packet} =
+             EncryptedPacket.decode(request_payload, result.auth_key,
+               sender: :client,
+               session_id: 123
+             )
+
+    assert decoded_request_packet == sent_packet
+    assert decoded_request_packet.body == request_body
+    assert decoded_request_packet.seq_no == 1
+
+    assert {:ok, server_payload} =
+             EncryptedPacket.encode(
+               %EncryptedPacket{
+                 salt: result.server_salt,
+                 session_id: 123,
+                 message_id: 8_000,
+                 seq_no: 1,
+                 body: rpc_result_body(request_id, response_body)
+               },
+               result.auth_key,
+               sender: :server,
+               padding_bytes: :binary.copy(<<0xBB>>, 64)
+             )
+
+    send(connection, {:tcp, socket, Abridged.encode(server_payload)})
+
+    assert_receive {:mtproto, ^connection,
+                    {:encrypted_packet_received, _packet}}
+
+    assert_receive {:mtproto, ^connection,
+                    {:rpc_result, ^request_id, ^response_body}}
+
+    assert_receive {:mtproto, ^connection,
+                    {:rpc_request_result, ^request_id, :demo_request,
+                     ^response_body}}
+
+    assert_receive {:fake_socket, :send, ^socket, ack_packet}
+
+    assert_receive {:mtproto, ^connection,
+                    {:msgs_ack_sent, ack_msg_id, [8_000]}}
+
+    assert {:ok, ack_payload} = decode_transport_frame(ack_packet)
+
+    assert {:ok, ack_plaintext} =
+             EncryptedPacket.decode(ack_payload, result.auth_key,
+               sender: :client,
+               session_id: 123
+             )
+
+    assert ack_plaintext.message_id == ack_msg_id
+    assert ack_plaintext.seq_no == 2
+    assert ack_plaintext.body == msgs_ack_body([8_000])
+  end
+
+  defp encode_plain_frame(body, message_id) do
+    %PlainMessage{message_id: message_id, body: body}
+    |> PlainMessage.encode()
+    |> Abridged.encode()
+  end
+
+  defp assert_plain_packet_body(packet, expected_body) do
+    assert {:ok, frame} = decode_transport_frame(packet)
+    assert {:ok, message} = PlainMessage.decode(frame)
+    assert message.body == expected_body
+  end
+
+  defp decode_transport_frame(packet) do
+    with {:ok, _decoder, [frame]} <-
+           Abridged.feed(Abridged.new_decoder(), packet) do
+      {:ok, frame}
+    end
+  end
+
+  defp ping_body(ping_id) do
+    <<0x7ABE77EC::little-unsigned-32, ping_id::little-signed-64>>
+  end
+
+  defp rpc_result_body(req_msg_id, result) do
+    <<0xF35C6D01::little-unsigned-32, req_msg_id::little-signed-64,
+      result::binary>>
+  end
+
+  defp pong_body(msg_id, ping_id) do
+    <<0x347773C5::little-unsigned-32, msg_id::little-signed-64,
+      ping_id::little-signed-64>>
+  end
+
+  defp msgs_ack_body(msg_ids) do
+    <<0x62D6B459::little-unsigned-32,
+      TL.encode_vector(msg_ids, &TL.encode_signed_long/1)::binary>>
+  end
+
+  defp new_session_created_body(first_msg_id, unique_id, server_salt) do
+    <<0x9EC20908::little-unsigned-32, first_msg_id::little-signed-64,
+      unique_id::little-signed-64, server_salt::little-signed-64>>
+  end
+
+  defp message_container_body(messages) do
+    entries =
+      Enum.map_join(messages, fn %{
+                                   message_id: message_id,
+                                   seq_no: seq_no,
+                                   body: body
+                                 } ->
+        <<message_id::little-signed-64, seq_no::little-signed-32,
+          byte_size(body)::little-signed-32, body::binary>>
+      end)
+
+    <<0x73F1F8DC::little-unsigned-32, length(messages)::little-signed-32,
+      entries::binary>>
+  end
+
+  defp start_authenticated_connection do
     {:ok, key} = PublicKey.from_pem(MTProto.TelegramKeys.sample_pem())
 
     {:ok, connection} =
@@ -160,140 +386,6 @@ defmodule MTProto.TCPConnectionTest do
     assert result.time_offset ==
              MTProto.AuthExchangeSample.expected_time_offset()
 
-    assert :ok =
-             TCPConnection.ping(connection, 99,
-               padding_bytes: :binary.copy(<<0xAA>>, 64)
-             )
-
-    assert_receive {:fake_socket, :send, ^socket, ping_packet}
-
-    assert_receive {:mtproto, ^connection,
-                    {:encrypted_packet_sent, sent_packet}}
-
-    assert_receive {:mtproto, ^connection,
-                    {:session_message_sent, ping_msg_id, 0, ping_body}}
-
-    assert_receive {:mtproto, ^connection, {:ping_sent, ^ping_msg_id, 99}}
-
-    assert ping_body == ping_body(99)
-
-    assert {:ok, ping_payload} = decode_transport_frame(ping_packet)
-
-    assert {:ok, decoded_ping_packet} =
-             EncryptedPacket.decode(ping_payload, result.auth_key,
-               sender: :client,
-               session_id: 123
-             )
-
-    assert decoded_ping_packet == sent_packet
-    assert decoded_ping_packet.body == ping_body(99)
-    assert decoded_ping_packet.seq_no == 0
-
-    server_body =
-      message_container_body([
-        %{
-          message_id: 701,
-          seq_no: 0,
-          body: new_session_created_body(111, 222, 555)
-        },
-        %{message_id: 705, seq_no: 0, body: pong_body(ping_msg_id, 99)}
-      ])
-
-    assert {:ok, server_payload} =
-             EncryptedPacket.encode(
-               %EncryptedPacket{
-                 salt: result.server_salt,
-                 session_id: 123,
-                 message_id: 7_000,
-                 seq_no: 1,
-                 body: server_body
-               },
-               result.auth_key,
-               sender: :server,
-               padding_bytes: :binary.copy(<<0xBB>>, 64)
-             )
-
-    send(connection, {:tcp, socket, Abridged.encode(server_payload)})
-
-    assert_receive {:mtproto, ^connection,
-                    {:encrypted_packet_received, _packet}}
-
-    assert_receive {:mtproto, ^connection,
-                    {:new_session_created, 111, 222, 555}}
-
-    assert_receive {:mtproto, ^connection, {:pong, ^ping_msg_id, 99}}
-
-    assert_receive {:fake_socket, :send, ^socket, ack_packet}
-
-    assert_receive {:mtproto, ^connection,
-                    {:msgs_ack_sent, ack_msg_id, [7_000]}}
-
-    assert {:ok, ack_payload} = decode_transport_frame(ack_packet)
-
-    assert {:ok, ack_plaintext} =
-             EncryptedPacket.decode(ack_payload, result.auth_key,
-               sender: :client,
-               session_id: 123
-             )
-
-    assert ack_plaintext.message_id == ack_msg_id
-    assert ack_plaintext.salt == 555
-    assert ack_plaintext.seq_no == 0
-    assert ack_plaintext.body == msgs_ack_body([7_000])
-
-    assert_receive {:fake_socket, :setopts, ^socket, [active: :once]}
-  end
-
-  defp encode_plain_frame(body, message_id) do
-    %PlainMessage{message_id: message_id, body: body}
-    |> PlainMessage.encode()
-    |> Abridged.encode()
-  end
-
-  defp assert_plain_packet_body(packet, expected_body) do
-    assert {:ok, frame} = decode_transport_frame(packet)
-    assert {:ok, message} = PlainMessage.decode(frame)
-    assert message.body == expected_body
-  end
-
-  defp decode_transport_frame(packet) do
-    with {:ok, _decoder, [frame]} <-
-           Abridged.feed(Abridged.new_decoder(), packet) do
-      {:ok, frame}
-    end
-  end
-
-  defp ping_body(ping_id) do
-    <<0x7ABE77EC::little-unsigned-32, ping_id::little-signed-64>>
-  end
-
-  defp pong_body(msg_id, ping_id) do
-    <<0x347773C5::little-unsigned-32, msg_id::little-signed-64,
-      ping_id::little-signed-64>>
-  end
-
-  defp msgs_ack_body(msg_ids) do
-    <<0x62D6B459::little-unsigned-32,
-      TL.encode_vector(msg_ids, &TL.encode_signed_long/1)::binary>>
-  end
-
-  defp new_session_created_body(first_msg_id, unique_id, server_salt) do
-    <<0x9EC20908::little-unsigned-32, first_msg_id::little-signed-64,
-      unique_id::little-signed-64, server_salt::little-signed-64>>
-  end
-
-  defp message_container_body(messages) do
-    entries =
-      Enum.map_join(messages, fn %{
-                                   message_id: message_id,
-                                   seq_no: seq_no,
-                                   body: body
-                                 } ->
-        <<message_id::little-signed-64, seq_no::little-signed-32,
-          byte_size(body)::little-signed-32, body::binary>>
-      end)
-
-    <<0x73F1F8DC::little-unsigned-32, length(messages)::little-signed-32,
-      entries::binary>>
+    %{connection: connection, socket: socket, result: result}
   end
 end

@@ -80,6 +80,12 @@ defmodule MTProto.TCPConnection do
     GenServer.call(server, {:ping, ping_id, opts})
   end
 
+  @spec invoke(GenServer.server(), binary(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def invoke(server, body, opts \\ []) do
+    GenServer.call(server, {:invoke, body, opts})
+  end
+
   @impl true
   def init(opts) do
     host = Keyword.fetch!(opts, :host)
@@ -159,6 +165,38 @@ defmodule MTProto.TCPConnection do
         with {:ok, state} <-
                execute_effects(%{state | session: next_session}, effects) do
           {:reply, :ok, state}
+        else
+          {:error, reason} -> {:reply, {:error, reason}, state}
+        end
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call(
+        {:invoke, _body, _opts},
+        _from,
+        %__MODULE__{session: nil} = state
+      ) do
+    {:reply, {:error, :session_not_ready}, state}
+  end
+
+  def handle_call(
+        {:invoke, body, opts},
+        _from,
+        %__MODULE__{session: session} = state
+      ) do
+    case Session.send_request(
+           session,
+           state.now_ns_fun.(),
+           body,
+           with_session_padding(opts)
+         ) do
+      {:ok, next_session, request_id, effects} ->
+        with {:ok, state} <-
+               execute_effects(%{state | session: next_session}, effects) do
+          {:reply, {:ok, request_id}, state}
         else
           {:error, reason} -> {:reply, {:error, reason}, state}
         end

@@ -105,6 +105,157 @@ defmodule MTProto.SessionTest do
            )
   end
 
+  test "tracks content requests and correlates rpc_result replies" do
+    auth_key = AuthKey.new!(MTProto.CryptoVectors.auth_key_0_to_255())
+
+    {:ok, session} =
+      Session.new(
+        %ExchangeResult{auth_key: auth_key, server_salt: 42, time_offset: 0},
+        session_id: 123,
+        last_msg_id: 100
+      )
+
+    request_body = <<0x44, 0x33, 0x22, 0x11>>
+
+    assert {:ok, requested_session, request_id, send_effects} =
+             Session.send_request(session, 2_000_000_000, request_body,
+               request: :demo_request,
+               padding_bytes: :binary.copy(<<0xAA>>, 64)
+             )
+
+    assert requested_session.sent_content_messages == 1
+
+    assert requested_session.pending_requests[request_id] == %{
+             body: request_body,
+             request: :demo_request,
+             seq_no: 1
+           }
+
+    assert {:ok, encrypted} =
+             EncryptedPacket.encode(
+               %EncryptedPacket{
+                 salt: 42,
+                 session_id: 123,
+                 message_id: 5_000,
+                 seq_no: 1,
+                 body: rpc_result_body(request_id, <<0x88, 0x77, 0x66, 0x55>>)
+               },
+               auth_key,
+               sender: :server,
+               padding_bytes: :binary.copy(<<0xBB>>, 64)
+             )
+
+    assert {:ok, next_session, receive_effects} =
+             Session.receive_packet(
+               requested_session,
+               encrypted,
+               9_000_000_000, padding_bytes: :binary.copy(<<0xCC>>, 64))
+
+    assert next_session.pending_requests == %{}
+
+    assert {:rpc_request_sent, request_id, :demo_request} in notifications(
+             send_effects
+           )
+
+    assert {:rpc_result, request_id, <<0x88, 0x77, 0x66, 0x55>>} in notifications(
+             receive_effects
+           )
+
+    assert {:rpc_request_result, request_id, :demo_request,
+            <<0x88, 0x77, 0x66, 0x55>>} in notifications(receive_effects)
+
+    assert {:send_encrypted, ack_payload} =
+             Enum.find(receive_effects, fn
+               {:send_encrypted, _payload} -> true
+               _ -> false
+             end)
+
+    assert {:ok, ack_packet} =
+             EncryptedPacket.decode(ack_payload, auth_key,
+               sender: :client,
+               session_id: 123
+             )
+
+    assert ack_packet.seq_no == 2
+    assert ack_packet.body == msgs_ack_body([5_000])
+  end
+
+  test "resends a pending request after bad_server_salt" do
+    auth_key = AuthKey.new!(MTProto.CryptoVectors.auth_key_0_to_255())
+
+    {:ok, session} =
+      Session.new(
+        %ExchangeResult{auth_key: auth_key, server_salt: 42, time_offset: 0},
+        session_id: 123,
+        last_msg_id: 100
+      )
+
+    request_body = <<0x10, 0x20, 0x30, 0x40>>
+
+    assert {:ok, requested_session, request_id, _send_effects} =
+             Session.send_request(session, 2_000_000_000, request_body,
+               request: :salt_sensitive,
+               padding_bytes: :binary.copy(<<0xAA>>, 64)
+             )
+
+    assert {:ok, encrypted} =
+             EncryptedPacket.encode(
+               %EncryptedPacket{
+                 salt: 42,
+                 session_id: 123,
+                 message_id: 5_500,
+                 seq_no: 1,
+                 body: bad_server_salt_body(request_id, 1, 48, -999)
+               },
+               auth_key,
+               sender: :server,
+               padding_bytes: :binary.copy(<<0xBB>>, 64)
+             )
+
+    assert {:ok, next_session, receive_effects} =
+             Session.receive_packet(
+               requested_session,
+               encrypted,
+               9_000_000_000, padding_bytes: :binary.copy(<<0xCC>>, 128))
+
+    assert next_session.server_salt == -999
+    assert Map.has_key?(next_session.pending_requests, request_id)
+
+    [resent_effect, ack_effect] =
+      Enum.filter(receive_effects, fn
+        {:send_encrypted, _payload} -> true
+        _ -> false
+      end)
+
+    {:send_encrypted, resent_payload} = resent_effect
+    {:send_encrypted, ack_payload} = ack_effect
+
+    assert {:ok, resent_packet} =
+             EncryptedPacket.decode(resent_payload, auth_key,
+               sender: :client,
+               session_id: 123
+             )
+
+    assert resent_packet.salt == -999
+    assert resent_packet.message_id == request_id
+    assert resent_packet.seq_no == 1
+    assert resent_packet.body == request_body
+
+    assert {:ok, ack_packet} =
+             EncryptedPacket.decode(ack_payload, auth_key,
+               sender: :client,
+               session_id: 123
+             )
+
+    assert ack_packet.salt == -999
+    assert ack_packet.seq_no == 2
+    assert ack_packet.body == msgs_ack_body([5_500])
+
+    assert {:rpc_request_resent, request_id, :salt_sensitive, -999} in notifications(
+             receive_effects
+           )
+  end
+
   test "unwraps message containers and emits the contained service messages" do
     auth_key = AuthKey.new!(MTProto.CryptoVectors.auth_key_0_to_255())
 
